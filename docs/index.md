@@ -12,6 +12,19 @@ import NowStatus from './.vitepress/theme/NowStatus.vue'
 
 <NowStatus />
 
+## API 快速调用
+
+| 需要什么 | GET 路径 | 返回内容 |
+| --- | --- | --- |
+| 完整状态，组合页面推荐 | `/api/now` | 原始音乐、应用、电池与负载快照 |
+| 音乐小组件 | `/api/music` | 歌名、歌手、可空的封面与歌曲 URL |
+| 前台应用 | `/api/apps/active` | 应用名、静态图标与图片 API 地址 |
+| 运行应用 | `/api/apps/running` | 名称与图标对象数组，未采集为 `null` |
+| 电池与负载 | `/api/device` | `device.battery`、`device.system` |
+| 固定应用图标 | `/api/icons` | 随部署发布的原生 PNG 清单 |
+
+需要多类数据时每轮只请求一次 `/api/now`；四个分类接口各自读取一次 KV，不要并行轮询全部入口。本页仍只获取完整快照，封面由浏览器查询 Apple。[curl 与图片示例](integrations.md#按需选择接口) · [浏览图标与复制地址](app-icons.md#已发布图标) · [完整 API](api.md)
+
 ## 在你自己的 Mac 上使用
 
 MacFlare 本机只使用系统自带工具。部署一次后，由 macOS 原生 `launchd` 定时推送；无需第三方后台管理器或播放器。

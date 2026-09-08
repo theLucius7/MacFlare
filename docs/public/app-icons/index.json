@@ -151,6 +151,422 @@
       "credit": "应用图标版权归原作者",
       "sourceUrl": null,
       "sha256": "fb391e2d5694da36376acd01a85762aab95de8ed7933c555db5ae31f09278097"
+    },
+    {
+      "id": "epic-games-launcher",
+      "app": "Epic Games Launcher",
+      "aliases": [
+        "Epic Games Launcher",
+        "EpicGamesLauncher-Mac-Shipping"
+      ],
+      "imageUrl": "/api/icons/epic-games-launcher.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "6b426910034514c08e7608ce5cb8bd109ddf1f48d8ec48d1d4291245114b414d"
+    },
+    {
+      "id": "google-chrome",
+      "app": "Google Chrome",
+      "aliases": [
+        "Google Chrome",
+        "Chrome"
+      ],
+      "imageUrl": "/api/icons/google-chrome.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "c3bc06ce343a356cac6043eb608bc13a351f1ffbb6b1ab27bea126a1d1f286ad"
+    },
+    {
+      "id": "google-drive",
+      "app": "Google Drive",
+      "aliases": [
+        "Google Drive"
+      ],
+      "imageUrl": "/api/icons/google-drive.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "d53066bd3e99425144e9e5a672286aa0b45b16d623ca13777fb942c20d6c1bdc"
+    },
+    {
+      "id": "lark",
+      "app": "Lark",
+      "aliases": [
+        "Lark",
+        "Feishu",
+        "飞书",
+        "飛書"
+      ],
+      "imageUrl": "/api/icons/lark.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "b89e74d5f1de9fb75b3e2836a0329bc954cc1e0c0eebc3e60e64c858ada757ea"
+    },
+    {
+      "id": "netease-music",
+      "app": "NetEaseMusic",
+      "aliases": [
+        "NetEaseMusic",
+        "NeteaseMusic",
+        "网易云音乐"
+      ],
+      "imageUrl": "/api/icons/netease-music.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "8d3eaca10eba51ad99e56e69967e257e27b74f70b2b7819d5f5146a52defbde1"
+    },
+    {
+      "id": "numbers",
+      "app": "Numbers",
+      "aliases": [
+        "Numbers",
+        "Numbers Creator Studio",
+        "Numbers表格"
+      ],
+      "imageUrl": "/api/icons/numbers.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "80d7599b9d80454273e8c1c25db35ae93480b143a64aebfb00fe9099db546dec"
+    },
+    {
+      "id": "pages",
+      "app": "Pages",
+      "aliases": [
+        "Pages",
+        "Pages Creator Studio",
+        "Pages文稿"
+      ],
+      "imageUrl": "/api/icons/pages.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "1edb0854d94a7750f5f5e790ff1911297b531e10bf229774fbbdc0fca3440d9e"
+    },
+    {
+      "id": "spotify",
+      "app": "Spotify",
+      "aliases": [
+        "Spotify"
+      ],
+      "imageUrl": "/api/icons/spotify.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "e1f505c5ea714145335aebc2c0bc1c97df23ae0c12c44ec9ff85bb8bacfe82b8"
+    },
+    {
+      "id": "steam",
+      "app": "Steam",
+      "aliases": [
+        "Steam",
+        "steam_osx"
+      ],
+      "imageUrl": "/api/icons/steam.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "5230dbe550696e47b4e7ac6db55b3f831606296fe7e50a955e3ebcc1af7b0bb3"
+    },
+    {
+      "id": "uu-remote",
+      "app": "UURemote",
+      "aliases": [
+        "UURemote",
+        "UU远程"
+      ],
+      "imageUrl": "/api/icons/uu-remote.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "6ae2342c98c1abbfdc31329732d86ea30fa6ba7a3800d1c342d8e52f6dec6969"
+    },
+    {
+      "id": "app-store",
+      "app": "App Store",
+      "aliases": [
+        "App Store"
+      ],
+      "imageUrl": "/api/icons/app-store.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "f64bf8fbd5569ba56fee64b8e569b79ae8ac63149797859a12310c3e8c0c80aa"
+    },
+    {
+      "id": "calendar",
+      "app": "Calendar",
+      "aliases": [
+        "Calendar"
+      ],
+      "imageUrl": "/api/icons/calendar.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "2ae386303b3ea6d2afb32a037cce5c09d05cbf1f493dda935c91964b0fa46d73"
+    },
+    {
+      "id": "games",
+      "app": "Games",
+      "aliases": [
+        "Games"
+      ],
+      "imageUrl": "/api/icons/games.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "5814764a34bba19e3c1bc8a655134867287bade7d0a1172aab9e4062257da4cb"
+    },
+    {
+      "id": "messages",
+      "app": "Messages",
+      "aliases": [
+        "Messages"
+      ],
+      "imageUrl": "/api/icons/messages.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "28bcaae2ec6b696f2d58ea75ab11226c8b2b64ffe04b88ffb0b89e4c937e0c09"
+    },
+    {
+      "id": "news",
+      "app": "News",
+      "aliases": [
+        "News"
+      ],
+      "imageUrl": "/api/icons/news.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "0e56fcc41e99805daa072d74027b0b4ecd8d68c7e44ba2a6210b4af469377043"
+    },
+    {
+      "id": "quicktime-player",
+      "app": "QuickTime Player",
+      "aliases": [
+        "QuickTime Player"
+      ],
+      "imageUrl": "/api/icons/quicktime-player.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "a070e9c89d57f1843a13a551045723852d6b89e628df259b0d11aa0b053c4a48"
+    },
+    {
+      "id": "tv",
+      "app": "TV",
+      "aliases": [
+        "TV"
+      ],
+      "imageUrl": "/api/icons/tv.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "9194a087ef7175e9f036932d18a89122c42f834fc56c3fe29caf6808073349e4"
+    },
+    {
+      "id": "textedit",
+      "app": "TextEdit",
+      "aliases": [
+        "TextEdit"
+      ],
+      "imageUrl": "/api/icons/textedit.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "af222f07f76370cb3266b97061f4f850fe6ff06061409010ff2a2adffe27e631"
+    },
+    {
+      "id": "iphone-mirroring",
+      "app": "iPhone Mirroring",
+      "aliases": [
+        "iPhone Mirroring"
+      ],
+      "imageUrl": "/api/icons/iphone-mirroring.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "f334f3135aea211630ef7f9c7b087454333c50a78648bf4d17b01fcf2f10c4b1"
+    },
+    {
+      "id": "system-information",
+      "app": "System Information",
+      "aliases": [
+        "System Information"
+      ],
+      "imageUrl": "/api/icons/system-information.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "2a1e8a71c335dff289d98758fe156a8a8990dfaab6fecbbb8d5db90d379f965e"
+    },
+    {
+      "id": "terminal",
+      "app": "Terminal",
+      "aliases": [
+        "Terminal"
+      ],
+      "imageUrl": "/api/icons/terminal.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "9efa8d96abe9c00b29e699955c158d55d6a6308efe1985ed5748bba8b8cbd1f0"
+    },
+    {
+      "id": "keynote",
+      "app": "Keynote",
+      "aliases": [
+        "Keynote",
+        "Keynote Creator Studio",
+        "Keynote讲演"
+      ],
+      "imageUrl": "/api/icons/keynote.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "5ee80dc989cf3273790b95273848483f9f2990d80016b79f4956713438ca0cab"
+    },
+    {
+      "id": "pixelmator-pro",
+      "app": "Pixelmator Pro",
+      "aliases": [
+        "Pixelmator Pro",
+        "Pixelmator Pro Creator Studio"
+      ],
+      "imageUrl": "/api/icons/pixelmator-pro.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "a5f1373a0dad23c56f0a5cd0801adefeb238caf4b66d9b8e2fd915ddcc6d1038"
+    },
+    {
+      "id": "libreoffice",
+      "app": "LibreOffice",
+      "aliases": [
+        "LibreOffice",
+        "soffice"
+      ],
+      "imageUrl": "/api/icons/libreoffice.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "a80c09f20195289e8d11bd019d4ed4ded76298d7622bdd2cd9fe18097e040f10"
+    },
+    {
+      "id": "typora",
+      "app": "Typora",
+      "aliases": [
+        "Typora"
+      ],
+      "imageUrl": "/api/icons/typora.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "dbaf46d22b981c1404ecb9e4d7d5529891d8d44d419a9dbcee7e24dc0cb4d91f"
+    },
+    {
+      "id": "termius",
+      "app": "Termius",
+      "aliases": [
+        "Termius"
+      ],
+      "imageUrl": "/api/icons/termius.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "56f190d1f75a0756029f3c34527eadf3b6d3352d7f685c3e92f57aef0b6433e4"
+    },
+    {
+      "id": "tencent-meeting",
+      "app": "TencentMeeting",
+      "aliases": [
+        "TencentMeeting",
+        "腾讯会议"
+      ],
+      "imageUrl": "/api/icons/tencent-meeting.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "3e8c74dfaa1ec33137d8ec230d1f299519795de8ca15ee832d24cd6f9cc9d029"
+    },
+    {
+      "id": "baidu-netdisk",
+      "app": "BaiduNetdisk_mac",
+      "aliases": [
+        "BaiduNetdisk_mac",
+        "BaiduNetdisk",
+        "百度网盘"
+      ],
+      "imageUrl": "/api/icons/baidu-netdisk.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "d1b0d785d497eca2faf6458a7317da5bb18f87f2ede62e9d9c6a47b97a85a2c6"
+    },
+    {
+      "id": "notes",
+      "app": "Notes",
+      "aliases": [
+        "Notes"
+      ],
+      "imageUrl": "/api/icons/notes.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "9847a0a6abc1db2b7b110d2f6666fabad44f8c0b3ef2e7e871067678b8468ef4"
+    },
+    {
+      "id": "reminders",
+      "app": "Reminders",
+      "aliases": [
+        "Reminders"
+      ],
+      "imageUrl": "/api/icons/reminders.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "6477699ac3a244f047553084c1359ddad51e48683e2dc8290e9c6d8ee6baf45f"
+    },
+    {
+      "id": "photos",
+      "app": "Photos",
+      "aliases": [
+        "Photos"
+      ],
+      "imageUrl": "/api/icons/photos.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "ba6bca49d05fff2b375220ce4684a92b73490ddaa01c21a4c78212c73f4944df"
+    },
+    {
+      "id": "calculator",
+      "app": "Calculator",
+      "aliases": [
+        "Calculator"
+      ],
+      "imageUrl": "/api/icons/calculator.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "8d9427a54d2e5d73aa4f125b50b5220674580d582a2ba52b88c896ca3faf60c9"
+    },
+    {
+      "id": "activity-monitor",
+      "app": "Activity Monitor",
+      "aliases": [
+        "Activity Monitor"
+      ],
+      "imageUrl": "/api/icons/activity-monitor.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "93cca47c61c21444a868ddd32105e52e902ac355189a58613155f949cc54943d"
     }
   ]
 }

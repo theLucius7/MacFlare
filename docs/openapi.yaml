@@ -4,7 +4,9 @@ info:
   version: 0.1.0
   summary: 原生 macOS 状态的单向公开快照 API
   description: >-
-    单设备协议 schema_version=1。写入须 Bearer 鉴权，查询公开。
+    单设备协议 schema_version=1。写入须 Bearer 鉴权，查询公开。/api/now 原有结构不变。
+    音乐、前台应用、运行应用、设备分类接口只支持规范 /api/* 路径；每次 GET 各读取一次 KV，不写 KV。
+    需要完整状态时只调用一次 /api/now，不要并行轮询全部分类接口。
     KV expirationTtl 由服务器配置，默认 eco 180 秒，realtime 60 秒，读取按服务端时间判断新鲜度；KV 最终一致可能造成旧值或暂时离线。
     已知路径支持 OPTIONS 204，仅图标接口支持 HEAD；未知路径或图标返回 404。查询参数不改变行为。
     所有接口设置 CORS *；状态接口使用 no-store，图标 API 成功响应公开缓存 1 小时，不访问 KV。
@@ -104,6 +106,7 @@ paths:
       description: >-
         快照到达 expires_at、缺失或损坏时返回 offline。
         online 不表示用户在场，也不保证所有指标可用。KV 读取失败返回 503。
+        此完整快照协议不增加封面或图标字段；需要多类状态时优先一次调用本接口。
       responses:
         '200':
           description: 在线快照或离线状态
@@ -119,6 +122,134 @@ paths:
           $ref: '#/components/responses/Unavailable'
     options:
       operationId: optionsNow
+      responses:
+        '204':
+          $ref: '#/components/responses/Preflight'
+  /api/music:
+    get:
+      operationId: getMusic
+      summary: 读取音乐及可空的 Apple 封面与歌曲链接
+      description: >-
+        单次 GET 读取一次 KV；没有新鲜快照时仅返回 offline。歌曲及艺人严格规范化匹配美国商店结果，
+        仅 playing/paused 且元数据齐全时查询 Apple；HTTPS URL 无匹配或搜索失败时为 null，不清空曲名。
+        Apple 查询阶段限时 4.5 秒，接口总耗时还包括 KV 与缓存访问。
+        公共目录匹配成功缓存 1 小时、失败或未匹配缓存 5 分钟。
+        缓存位于实例内存（最多 50 条）及边缘 Cache API，不含设备状态、不写 KV，可提前淘汰且不保证全局命中。
+        返回前再次检查快照截止时间，慢查询期间过期也返回 offline。仅 GET/OPTIONS，HEAD 405，无根路径别名。
+      responses:
+        '200':
+          description: 分类在线状态或精确的 offline 对象
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/StatusCacheControl'
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/PublicOrigin'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/MusicStatus'
+                  - $ref: '#/components/schemas/OfflineStatus'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    options:
+      operationId: optionsMusic
+      responses:
+        '204':
+          $ref: '#/components/responses/Preflight'
+  /api/apps/active:
+    get:
+      operationId: getActiveApp
+      summary: 读取前台应用及原生图标地址
+      description: >-
+        单次 GET 读取一次 KV，不写 KV；没有新鲜快照时仅返回 offline。
+        未采集或不可用时 active_app 为 null。未知或 System 保留名称，两种图标 URL 为 null。
+        icon_url 是相对于部署根域名的静态路径，icon_api_url 是同一 PNG 的 API 路径。
+        不向第三方搜索应用名。仅 GET/OPTIONS，HEAD 405，无根路径别名。
+      responses:
+        '200':
+          description: 分类在线状态或精确的 offline 对象
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/StatusCacheControl'
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/PublicOrigin'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ActiveAppStatus'
+                  - $ref: '#/components/schemas/OfflineStatus'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    options:
+      operationId: optionsActiveApp
+      responses:
+        '204':
+          $ref: '#/components/responses/Preflight'
+  /api/apps/running:
+    get:
+      operationId: getRunningApps
+      summary: 读取运行应用列表及原生图标地址
+      description: >-
+        单次 GET 读取一次 KV，不写 KV；没有新鲜快照时仅返回 offline。
+        原快照未采集 running_apps 时返回 null，已采集但无应用时返回空数组；每项名称与图标结构同前台应用。
+        未知图标 URL 为 null，不向第三方搜索应用名。仅 GET/OPTIONS，HEAD 405，无根路径别名。
+      responses:
+        '200':
+          description: 分类在线状态或精确的 offline 对象
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/StatusCacheControl'
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/PublicOrigin'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/RunningAppsStatus'
+                  - $ref: '#/components/schemas/OfflineStatus'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    options:
+      operationId: optionsRunningApps
+      responses:
+        '204':
+          $ref: '#/components/responses/Preflight'
+  /api/device:
+    get:
+      operationId: getDevice
+      summary: 读取电池与系统负载
+      description: >-
+        单次 GET 读取一次 KV，不写 KV；没有新鲜快照时仅返回 offline。
+        device.battery 和 device.system 与完整快照结构一致，保留不可用字段的 null。
+        系统负载不是 CPU 使用率。仅 GET/OPTIONS，HEAD 405，无根路径别名。
+      responses:
+        '200':
+          description: 分类在线状态或精确的 offline 对象
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/StatusCacheControl'
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/PublicOrigin'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/DeviceStatus'
+                  - $ref: '#/components/schemas/OfflineStatus'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    options:
+      operationId: optionsDevice
       responses:
         '204':
           $ref: '#/components/responses/Preflight'
@@ -289,6 +420,10 @@ components:
       description: 传递给静态资源层的 HTTP 日期条件
       schema: {type: string}
   headers:
+    StatusCacheControl:
+      schema: {type: string, const: 'no-store, max-age=0'}
+    PublicOrigin:
+      schema: {type: string, const: '*'}
     IconCacheControl:
       schema: {type: string, const: 'public, max-age=3600'}
     AssetETag:
@@ -359,6 +494,114 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
   schemas:
+    SliceEnvelope:
+      type: object
+      required: [status, updated_at, expires_at, collected_at]
+      properties:
+        status: {type: string, const: online}
+        updated_at:
+          $ref: '#/components/schemas/UtcTimestamp'
+          description: 服务端接收时间
+        expires_at:
+          $ref: '#/components/schemas/UtcTimestamp'
+          description: 当前有效的服务端截止时间，不受封面缓存延长
+        collected_at:
+          $ref: '#/components/schemas/UtcTimestamp'
+          description: 本机快照采集时间
+    MusicWithArtwork:
+      type: object
+      additionalProperties: false
+      required: [state, track, artist, artwork_url, track_url]
+      properties:
+        state:
+          $ref: '#/components/schemas/Music/properties/state'
+        track:
+          $ref: '#/components/schemas/NullableMusicText'
+        artist:
+          $ref: '#/components/schemas/NullableMusicText'
+        artwork_url:
+          type: [string, 'null']
+          format: uri
+          description: 可信匹配的原始 artworkUrl100，HTTPS mzstatic.com 子域；无匹配或失败为 null
+          example: null
+        track_url:
+          type: [string, 'null']
+          format: uri
+          description: 同一可信歌曲的 HTTPS music.apple.com 或 itunes.apple.com 页面；无匹配或失败为 null
+          example: null
+    AppWithIcon:
+      type: object
+      additionalProperties: false
+      required: [name, icon_url, icon_api_url]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+          pattern: '^[^\u0000-\u001f\u007f]*$'
+          description: 本机过滤后的公开应用名，未知图标也保留名称
+          example: Visual Studio Code
+        icon_url:
+          type: [string, 'null']
+          pattern: '^/app-icons/[a-z0-9]+(?:-[a-z0-9]+)*\.png$'
+          description: 相对于部署根域名的静态 PNG，未知或 System 为 null；不执行 Worker
+          example: /app-icons/visual-studio-code.png
+        icon_api_url:
+          type: [string, 'null']
+          pattern: '^/api/icons/[a-z0-9]+(?:-[a-z0-9]+)*\.png$'
+          description: 相对于部署根域名的同图标 API 路径，未知或 System 为 null；请求计 Worker
+          example: /api/icons/visual-studio-code.png
+    MusicStatus:
+      allOf:
+        - $ref: '#/components/schemas/SliceEnvelope'
+        - type: object
+          required: [music]
+          properties:
+            music:
+              $ref: '#/components/schemas/MusicWithArtwork'
+      unevaluatedProperties: false
+    ActiveAppStatus:
+      allOf:
+        - $ref: '#/components/schemas/SliceEnvelope'
+        - type: object
+          required: [active_app]
+          properties:
+            active_app:
+              oneOf:
+                - $ref: '#/components/schemas/AppWithIcon'
+                - type: 'null'
+              description: 未采集或不可用时为 null
+      unevaluatedProperties: false
+    RunningAppsStatus:
+      allOf:
+        - $ref: '#/components/schemas/SliceEnvelope'
+        - type: object
+          required: [running_apps]
+          properties:
+            running_apps:
+              type: [array, 'null']
+              maxItems: 64
+              uniqueItems: true
+              items:
+                $ref: '#/components/schemas/AppWithIcon'
+              description: 未采集为 null，采集但无应用为 []
+      unevaluatedProperties: false
+    DeviceStatus:
+      allOf:
+        - $ref: '#/components/schemas/SliceEnvelope'
+        - type: object
+          required: [device]
+          properties:
+            device:
+              type: object
+              additionalProperties: false
+              required: [battery, system]
+              properties:
+                battery:
+                  $ref: '#/components/schemas/Battery'
+                system:
+                  $ref: '#/components/schemas/System'
+      unevaluatedProperties: false
     IconManifest:
       type: object
       additionalProperties: false

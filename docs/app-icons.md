@@ -1,6 +1,16 @@
+<script setup>
+import AppIconGallery from './.vitepress/theme/AppIconGallery.vue'
+</script>
+
 # 应用图标
 
 首页在前台应用和 GUI 应用列表旁优先展示仓库中的原生 PNG，并提供可直接引用的图片 API。图标清单是维护者配置的有限集合，不是全量图标库，也不随实时运行列表自动扩充。未知应用、隐私屏蔽后的 `System` 或图片加载失败时显示占位，不影响应用名称与设备状态。
+
+## 已发布图标
+
+<AppIconGallery />
+
+清单与图片随站点发布，无需等待设备在线。可复制静态地址用于图片展示，或使用统一的图片 API。
 
 ## 两种来源
 
@@ -13,7 +23,7 @@
 
 ## 配置固定映射
 
-编辑 [config/app-icons.json](https://github.com/xw7qwq/macflare/blob/main/config/app-icons.json)。默认列出 12 个应用，最多配置 32 项；实际可用图标以导出清单为准。
+编辑 [config/app-icons.json](https://github.com/xw7qwq/macflare/blob/main/config/app-icons.json)。当前配置与仓库清单包含 45 个已安装应用图标，最多配置 128 项；本页可浏览并复制图片地址，不代表这些应用当前正在运行。
 
 ```json
 {
@@ -34,7 +44,7 @@
 | 字段 | 要求与用途 |
 | --- | --- |
 | `version` | 固定为 `1` |
-| `apps` | 有限的应用映射数组，最多 32 项 |
+| `apps` | 有限的应用映射数组，1–128 项 |
 | `app` | 必填字符串，配置中的应用名称 |
 | `id` | 原生导出必填；唯一的小写字母、数字与单连字符标识，决定 PNG 文件名和 API 路径 |
 | `bundleId` | 原生导出必填；用于核对目标应用的 macOS bundle identifier |
@@ -53,7 +63,7 @@ npm run icons:export -- --dry-run
 npm run icons:export
 ```
 
-[导出脚本](https://github.com/xw7qwq/macflare/blob/main/scripts/export-app-icons.py) 使用开发阶段的 Python 3 与系统 JXA、`sips` 工具，不使用 macOSicons Key，也不增加生产 Agent 的运行依赖。普通站点构建不会扫描已安装应用。`--dry-run` 只检查配置中的应用是否存在，不导出或修改文件；应用缺失时导出停止并保留现有输出，先调整配置或安装目标应用。
+[导出脚本](https://github.com/xw7qwq/macflare/blob/main/scripts/export-app-icons.py) 使用开发阶段的 Python 3 与系统 JXA、`sips` 工具，不使用 macOSicons Key，也不增加生产 Agent 的运行依赖。普通站点构建不会扫描已安装应用。导出也支持用户的 `~/Applications` 安装目录。`--dry-run` 只检查配置中的应用是否存在，不导出或修改文件；应用缺失时导出停止并保留现有输出，先调整配置或安装目标应用。
 
 生成文件位于 `docs/public/app-icons/<id>.png` 和 `docs/public/app-icons/index.json`。检查图标、应用名称、别名与版权后，将需要公开的 PNG 和清单一同提交，再运行 `npm run deploy`。首次克隆可直接构建已有的仓库图标，无需重新导出或第三方 Key。应用图标更新后，重新导出并发布即可。
 
@@ -88,7 +98,9 @@ npm run deploy
 
 普通 `npm run docs:build` 不调用搜索 API；补充缓存不存在时会生成空清单，已有原生 PNG 仍可展示。只同步不会更新已部署页面，仍需发布。
 
-每条补充记录含 `fetchedAt` 和 `expiresAt`，最多有效 30 天；到期不再展示，需要重新同步并部署。同步会复用剩余有效期超过 2 天的记录，每个未复用应用最多搜索一次，不自动重试。确需重新查询时可追加 `--force`，这会额外消耗额度；不要反复强制同步处理限流。[请求与用量](quotas.md#应用图标的请求与额度)
+同步会跳过已有原生图标的配置项，`--force` 也不会搜索这些应用，避免为首页不会使用的补充图标消耗额度。只有尚未被原生图标覆盖的配置项需要第三方匹配。
+
+每条补充记录含 `fetchedAt` 和 `expiresAt`，最多有效 30 天；到期不再展示，需要重新同步并部署。同步会复用剩余有效期超过 2 天的补充记录，每个未复用、未被原生图标覆盖的应用最多搜索一次，不自动重试。确需重新查询补充项时可追加 `--force`，这会额外消耗额度；不要反复强制同步处理限流。[请求与用量](quotas.md#应用图标的请求与额度)
 
 ## 署名与使用边界
 

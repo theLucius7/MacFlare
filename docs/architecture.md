@@ -12,6 +12,9 @@ MacFlare 是单台 Mac 的公开状态发布器。Mac 负责采集并主动推�
 4. 脚本通过 HTTPS 将 JSON 发送到 `/api/update`。接收令牌只存在本机受限配置文件和 Cloudflare Secret 中。
 5. Worker 验证 Bearer、内容类型、体积及字段，把服务端时间加入快照，覆盖 KV 的固定键 `now`，设置服务端 TTL（默认配置 180 秒，实时模式 60 秒），并记录原始截止时间。
 6. `/api/now` 读取 KV 并验证服务端接收时间。没有记录或记录不再新鲜时返回 `{"status":"offline"}`。
+7. 音乐、前台应用、运行应用和设备分类接口从同一快照按需整理响应；每个请求各读取一次 KV。需要完整状态时只调用 `/api/now`，避免重复读取。
+
+应用分类接口使用随部署发布的原生图标清单，不向第三方搜索实时应用名。`/api/music` 可查询 Apple 公开目录并缓存匹配结果；这些缓存不含设备状态、不写 KV、不延长在线期限。首页的 Apple 查询仍由访客浏览器直接执行。[API 契约](api.md) · [封面数据流](privacy.md#音乐-api-封面查询)
 
 部署开发工具使用 Node.js 和 Wrangler。Mac 上的常驻采集流程不依赖 Node.js、Python、jq、Homebrew 或第三方播放器；JavaScript for Automation（JXA）由系统的 `/usr/bin/osascript` 执行，不是 Node.js。
 
