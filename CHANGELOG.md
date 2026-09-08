@@ -15,4 +15,8 @@
 - Worker、HTTP 边界和 macOS 原生测试，以及部署、API、配置和隐私文档。
 - 贡献与安全报告流程、行为规范、Issue/PR 模板和 Dependabot 更新配置。
 
+### Fixed
+
+- Music 当前曲目或单个元数据字段不可读时，保留已知的播放/暂停状态，缺失字段独立返回 `null`。
+
 计划功能见 [路线图](docs/roadmap.md)，已发生的代码变更见 [提交记录](https://github.com/theLucius7/MacFlare/commits/main/)。

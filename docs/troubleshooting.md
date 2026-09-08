@@ -27,7 +27,8 @@ curl -i https://<worker>.<subdomain>.workers.dev/api/now
 - 本地配置若关闭 `privacy.music`，不读取 Music。
 - 首次在终端执行 `--print` 时处理 macOS 自动化弹窗。进入“系统设置 → 隐私与安全性 → 自动化”检查对应终端或脚本宿主的 Music 权限。[Apple 授权说明](https://support.apple.com/en-gb/guide/mac-help/mchl108e1718/mac)
 - 后台由 `/bin/bash` 启动 `osascript`，macOS 的自动化弹窗或权限列表可能将授权主体显示为 **bash**。要启用后台音乐采集，需用户允许 **bash 控制 Music**；仅允许终端控制 Music 或手动采集成功，不能替代这项后台授权。授权后保持 Music 播放，等待后续后台周期，再检查 `/api/now` 中的音乐状态。不要用全盘访问或关闭系统保护替代自动化权限。
-- 拒绝授权、Music 未运行或元数据不可用时，按接口状态降级；这不应阻止电池和应用等独立指标上传。
+- `state` 为 `playing` 或 `paused` 而 `track` / `artist` 为 `null`，表示播放状态可读，但相应元数据不可读。例如 Music 暂停时，当前曲目对象可能不存在并报 `-1728`；这不代表自动化权限被拒绝，已知状态会保留，歌名与歌手分别降级。
+- 拒绝授权或播放器状态不可读时返回 `unavailable`；Music 未运行时返回 `stopped`。这些情况不应阻止电池和应用等独立指标上传。
 
 ## 看不到前台或运行中的应用
 

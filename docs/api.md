@@ -46,11 +46,11 @@
 | `system.load_1m` | `number` 或 `null`，0–100000 | 1 分钟负载平均值，不是 CPU 使用率 |
 | `system.load_5m` | 同上 | 5 分钟负载平均值 |
 | `system.load_15m` | 同上 | 15 分钟负载平均值 |
-| `music.state` | `playing`、`paused`、`stopped`、`unavailable` | 播放中、暂停、停止或无法采集/已关闭 |
+| `music.state` | `playing`、`paused`、`stopped`、`unavailable` | 播放中、暂停、停止（含 Music 未运行）、状态不可读或采集已禁用 |
 | `music.track` | `string` 或 `null`；1–500 字符 | 当前曲目名称 |
 | `music.artist` | `string` 或 `null`；1–500 字符 | 当前歌手 |
 
-长度按 Unicode 码点计算。文本不允许 ASCII 控制字符 `U+0000`–`U+001F` 和 `U+007F`；数字必须有限。Music 状态与元数据独立，暂停时可保留当前曲目，消费端应依据 `state` 判断是否正在播放，不应仅依据 `track` 非空。
+长度按 Unicode 码点计算。文本不允许 ASCII 控制字符 `U+0000`–`U+001F` 和 `U+007F`；数字必须有限。Music 状态与元数据独立：已读取到 `playing` 或 `paused` 时，即使当前曲目对象不存在，仍保留该状态并将 `track`、`artist` 设为 `null`；单个元数据字段读取失败时，仅该字段为 `null`。权限不足或播放器状态本身不可读时返回 `unavailable`。暂停时也可保留当前曲目，消费端应依据 `state` 判断是否正在播放，不应仅依据 `track` 非空。
 
 成功返回 HTTP 200：
 
