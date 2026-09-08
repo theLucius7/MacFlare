@@ -1,29 +1,29 @@
-# 安全策略
+# Security policy
 
-安全问题以默认分支的当前实现为基础排查；报告时请提供版本或提交号。本项目未承诺历史版本维护期限或响应时限。修复优先保持单向上报、可控采集和短时快照的边界。
+Security investigations use the current implementation on the default branch as their baseline. Include the affected version or commit in reports. This project does not promise maintenance periods for historical versions or response deadlines. Fixes prioritize one-way reporting, controlled collection, and short-lived snapshots.
 
-## 报告漏洞
+## Reporting a vulnerability
 
-仓库已启用 GitHub Private Vulnerability Reporting。请通过 [Report a vulnerability / 私密报告入口](https://github.com/xw7qwq/macflare/security/advisories/new) 提交漏洞，不要在公开 Issue 中发布有效令牌、个人快照或可直接利用的完整细节。如果入口暂时不可用，请创建不含敏感细节的 Issue 请求维护者提供私密联系渠道。
+GitHub Private Vulnerability Reporting is enabled for this repository. Use [Report a vulnerability](https://github.com/xw7qwq/macflare/security/advisories/new). Do not publish valid tokens, personal snapshots, or complete exploitable details in public issues. If the private reporting entry is temporarily unavailable, open an issue without sensitive details to request a private contact channel from a maintainer.
 
-报告应描述受影响版本或提交号、触发条件、最小复现、影响及建议缓解措施。使用测试凭据和合成状态，避免提交真实秘密。测试只针对自己拥有或得到授权的部署，不要扫描其他用户的状态地址。
+Describe the affected version or commit, trigger conditions, minimal reproduction, impact, and suggested mitigations. Use test credentials and synthetic status data rather than real secrets. Test only deployments you own or are authorized to test; do not scan other users' status endpoints.
 
-## 泄漏处置
+## Responding to a leak
 
-1. 使用卸载脚本停止本机后台上报；需要保留配置时不要选择清除选项。
-2. 为 Worker 重新设置 `INGEST_TOKEN`，并同步更新本机私有配置文件；令牌至少使用 32 字符的随机值，推荐 `openssl rand -hex 32`。
-3. 原快照按部署所配置的服务端 TTL 到期；必要时从对应 KV 命名空间删除 `now`。这不能删除第三方保存的副本。
-4. 排查仓库、CI 日志和本机日志中的泄漏；已经进入 Git 历史的令牌必须作废，仅删除文件不够。
-5. 核验匿名 `/api/update` 返回 401、新令牌可写、旧令牌不可写，然后再启用后台调度。
+1. Use the uninstall script to stop local background reporting. Do not select the cleanup option if you need to retain the configuration.
+2. Reset the Worker's `INGEST_TOKEN` and update the local private configuration file. Use a random token of at least 32 characters; `openssl rand -hex 32` is recommended.
+3. The old snapshot expires according to the deployment's server TTL. If necessary, delete `now` from the relevant KV namespace. This cannot remove copies saved by third parties.
+4. Investigate leaks in the repository, CI logs, and local logs. Revoke tokens that have entered Git history; deleting the file alone is insufficient.
+5. Verify that anonymous `/api/update` requests return 401, the new token can write, and the old token cannot write before enabling background scheduling again.
 
-Cloudflare 账户 API Token 与 MacFlare 接收令牌相互独立。若泄漏的是账户凭据，还须在 Cloudflare 撤销对应凭据并检查账户变更。
+Cloudflare account API tokens and MacFlare ingest tokens are independent. If account credentials were leaked, also revoke them in Cloudflare and review account changes.
 
-## 安全设计约定
+## Security design conventions
 
-- 接收凭据保存在 Cloudflare Secret 和权限受限的本机文件，不进入仓库、URL、前端或 plist。
-- 公共 API 故意公开状态。CORS 不是认证，TTL 不是阻止抓取或撤回公开信息的机制。
-- 外部字符串必须按输出语境编码；SVG 文本转义，网页消费端使用 `textContent`。
-- 服务器控制过期策略，并只接受协议允许的字段；客户端时间不能延长服务器新鲜度。
-- 不能将失败的采集伪装成成功，不能因获取指标而要求关闭 macOS 系统保护。
+- Store ingest credentials in a Cloudflare secret and a local file with restricted permissions, never in the repository, URLs, frontend, or plist.
+- The public API intentionally exposes status. CORS is not authentication, and TTL does not prevent scraping or retract already published information.
+- Encode external strings for their output context: escape SVG text and use `textContent` in web clients.
+- The server controls expiration and accepts only protocol-approved fields. Client timestamps cannot extend server freshness.
+- Do not present failed collection as successful or require macOS system protections to be disabled to obtain metrics.
 
-完整边界见 [隐私与威胁模型](docs/privacy.md)。
+See the [privacy and threat model](docs/privacy.md) for the complete boundaries.

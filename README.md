@@ -1,48 +1,48 @@
 # MacFlare
 
-**用 macOS 原生工具，将此刻的 Mac 状态推送到 Cloudflare。**
+**Push your Mac's current status to Cloudflare using native macOS tools.**
 
 [![CI](https://github.com/xw7qwq/macflare/actions/workflows/ci.yml/badge.svg)](https://github.com/xw7qwq/macflare/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-[状态与文档](https://macflare.lucius7.dev/) · [快速开始](https://macflare.lucius7.dev/getting-started) · [API](https://macflare.lucius7.dev/api) · [变更记录](CHANGELOG.md) · [安全报告](SECURITY.md)
+[Status and docs](https://macflare.lucius7.dev/) · [Quick start](https://macflare.lucius7.dev/getting-started) · [API](https://macflare.lucius7.dev/api) · [Changelog](CHANGELOG.md) · [Security reports](SECURITY.md)
 
-MacFlare 为个人博客、Now Page 和 GitHub README 提供 Apple Music 歌曲、前台应用、运行中的 GUI 应用、电池和系统负载。Mac 只主动推送，公网没有向 Mac 执行命令或拉取本地数据的通道。
+MacFlare provides Apple Music tracks, the foreground app, running GUI apps, battery information, and system load for personal blogs, Now Pages, and GitHub READMEs. The Mac only pushes data out; there is no public channel for executing commands on the Mac or fetching local data.
 
-本机运行仅使用系统自带的 Bash、`osascript`、`curl`、`pmset` 和 `launchd`，**无需 Node.js、Python、jq、Homebrew、pm2 或第三方播放器**。Node.js 22+ 仅用于开发、云端部署和构建文档。
+The Mac runtime uses only the system's Bash, `osascript`, `curl`, `pmset`, and `launchd`, **with no Node.js, Python, jq, Homebrew, pm2, or third-party player required**. Node.js 22+ is used only for development, cloud deployment, and documentation builds.
 
-## 能力
+## Features
 
-| 功能 | 行为 |
+| Feature | Behavior |
 | --- | --- |
-| Apple Music | 播放／暂停／停止、歌名和歌手；未授权时独立降级 |
-| 首页歌曲封面 | 优先使用 Mac 查询并上报的 Apple 封面；缺少有效 URL 时保留浏览器兼容查询 |
-| 应用状态 | 前台应用和 GUI 应用列表；不采集窗口标题、路径或进程参数 |
-| 应用图标 | 仓库内原生 PNG、公开图片 API 与静态直链；可选 macOSicons 补充，未知应用使用占位 |
-| 硬件状态 | 电量、充电、供电来源和系统负载平均值 |
-| 隐私控制 | 敏感应用屏蔽、追加名单、各采集项独立开关 |
-| 原生后台 | 用户登录后运行的 LaunchAgent，可安装、更新和卸载 |
-| 边缘接口 | Bearer 写入、完整快照与音乐／应用／设备分类查询、SVG 徽章、自动过期 |
-| 同站点文档 | 首页展示实时快照，文档静态托管，API 使用 `/api/*` |
+| Apple Music | Playing, paused, or stopped state, track title, and artist; degrades independently when permission is unavailable |
+| Home page artwork | Prefers Apple artwork looked up and reported by the Mac; retains the browser lookup fallback when a valid URL is missing |
+| App status | Foreground app and GUI app list; does not collect window titles, paths, or process arguments |
+| App icons | Native PNGs in the repository, a public image API, and direct static links; optional macOSicons supplementation and placeholders for unknown apps |
+| Hardware status | Battery level, charging state, power source, and system load averages |
+| Privacy controls | Sensitive-app blocking, additional blocklist entries, and independent collection switches |
+| Native background service | An installable, updatable, and removable LaunchAgent that runs after user login |
+| Edge API | Bearer-authenticated writes, full snapshots and music/app/device queries, SVG badges, and automatic expiration |
+| Integrated documentation | A live snapshot on the home page, static documentation, and API routes under `/api/*` |
 
-Mac 使用原生 `curl` 查询 Apple 公开目录，可信匹配的封面与歌曲 URL 随原有快照一次推送，作为 `music` 的可选字段，不增加 KV 写入次数。Worker 只验证和返回上报内容，不查询 Apple。首页优先显示上报封面，缺少有效 URL 时保留浏览器查询；无可信匹配时显示占位，停止或过期后撤掉封面。[封面隐私与缓存](docs/privacy.md#首页歌曲封面)
+The Mac uses native `curl` to query Apple's public catalog. Reliably matched artwork and track URLs are sent as optional `music` fields in the existing snapshot, without additional KV writes. The Worker validates and returns the reported data; it does not query Apple. The home page prefers reported artwork and falls back to browser lookup when a valid URL is missing. It shows a placeholder without a reliable match and removes artwork when playback stops or the snapshot expires. [Artwork privacy and caching](docs/privacy.md#首页歌曲封面)
 
-应用图标优先使用从已安装应用导出的 PNG，随有限清单提交到仓库并发布。`GET /api/icons` 返回清单，`/api/icons/<id>.png` 可直接作为图片地址；首页使用无需执行 Worker 的 `/app-icons/<id>.png` 静态路径。原生图标无需第三方 Key、没有 30 天到期限制，也不依赖 Mac 在线或 KV。macOSicons 仍可作为部署前同步的可选补充，其响应缓存单独遵守 30 天限制。[导出、接入与版权说明](docs/app-icons.md)
+App icons prefer PNGs exported from installed apps and published with a finite catalog in the repository. `GET /api/icons` returns the catalog, and `/api/icons/<id>.png` can be used directly as an image URL. The home page uses static `/app-icons/<id>.png` paths that do not execute the Worker. Native icons need no third-party key, have no 30-day expiration limit, and do not depend on the Mac being online or on KV. macOSicons remains an optional supplement synchronized before deployment; its response cache separately follows the 30-day limit. [Export, integration, and copyright](docs/app-icons.md)
 
-## 更新模式与免费额度
+## Update profiles and free quotas
 
-| 模式 | 上报间隔 | Worker TTL | 全天定时写入 |
+| Profile | Reporting interval | Worker TTL | Scheduled writes per full day |
 | --- | --- | --- | --- |
-| **eco（新安装默认）** | 120 秒 | 180 秒 | 约 720 次 |
-| realtime | 30 秒 | 60 秒 | 约 2,880 次 |
+| **eco (default for new installations)** | 120 seconds | 180 seconds | About 720 |
+| realtime | 30 seconds | 60 seconds | About 2,880 |
 
-eco 比 realtime 少写 **75%**，在免费 KV 每日 1,000 次写入中留出约 280 次余量。手动推送、登录启动、测试及同账户其他项目另计；这不是强制配额保护。旧配置未声明 `profile` 时保留 realtime，升级时须显式切换。[额度与切换方法](docs/quotas.md)
+eco uses **75%** fewer writes than realtime, leaving about 280 writes within the free KV allowance of 1,000 writes per day. Manual pushes, login startup, tests, and other projects on the same account count separately; this is not enforced quota protection. Older configurations without `profile` retain realtime, so upgrades require an explicit switch. [Quotas and switching profiles](docs/quotas.md)
 
-状态新鲜度与省额度需要取舍：eco 最长约 3 分钟才判离线；KV 最终一致，跨边缘读取仍可能短暂看到旧值或离线。[架构边界](docs/architecture.md)
+Freshness and quota savings involve a tradeoff: eco can take about 3 minutes to report an offline state. KV is eventually consistent, so reads across edge locations may briefly show an older value or an offline state. [Architectural limits](docs/architecture.md)
 
-## 快速开始
+## Quick start
 
-### 1. 部署自己的 Worker
+### 1. Deploy your own Worker
 
 ```sh
 git clone https://github.com/xw7qwq/macflare.git
@@ -52,7 +52,7 @@ npx wrangler login
 npx wrangler kv namespace create STATUS_KV
 ```
 
-把返回的命名空间 ID 填入 `wrangler.jsonc` 的 `kv_namespaces`，保留默认 `STATUS_TTL_SECONDS: "180"`。生成独立接收令牌，保存到密码管理器，再设置 Secret 并发布：
+Put the returned namespace ID in `kv_namespaces` in `wrangler.jsonc`, keeping the default `STATUS_TTL_SECONDS: "180"`. Generate a separate ingest token, save it in a password manager, then set the secret and deploy:
 
 ```sh
 openssl rand -hex 32
@@ -60,48 +60,47 @@ npx wrangler secret put INGEST_TOKEN
 npm run deploy
 ```
 
-`secret put` 交互式要求输入令牌，`deploy` 构建并一起发布站点和 API。已有 Cloudflare API Token、自定义域名及权限见 [部署指南](docs/deployment.md)。Cloudflare 管理凭据和 `INGEST_TOKEN` 必须分开。
+`secret put` prompts for the token; `deploy` builds and publishes the site and API together. See the [deployment guide](docs/deployment.md) for existing Cloudflare API tokens, custom domains, and permissions. Keep Cloudflare management credentials separate from `INGEST_TOKEN`.
 
-### 2. 预览并安装到 Mac
+### 2. Preview and install on your Mac
 
 ```sh
 /bin/bash agent/macflare.sh --print
 /bin/bash scripts/install.sh --endpoint https://<worker>.<subdomain>.workers.dev --profile eco
 ```
 
-将地址替换为**你自己的部署根域名**，不加 `/api`，交互输入同一接收令牌。Music 自动化授权需在 macOS 中允许；后台宿主可能显示为 **bash**。预览成功后，仍须核验后台周期。[配置与授权](docs/configuration.md)
+Replace the address with **your own deployment's root domain**, without `/api`, and enter the same ingest token when prompted. Allow Music automation in macOS; the background host may appear as **bash**. Verify the background cycle even after a successful preview. [Configuration and permissions](docs/configuration.md)
 
-### 3. 读取状态
+### 3. Read the status
 
 ```sh
 curl -sS https://<worker>.<subdomain>.workers.dev/api/now
 ```
 
-在线时返回结构化状态；没有新鲜快照时返回 `{"status":"offline"}`。读取无需令牌，网站不能持有接收 Secret。[博客和 README 接入示例](docs/integrations.md)
+The response contains structured status while online, or `{"status":"offline"}` when no fresh snapshot is available. Reads require no token; websites must not hold the ingest secret. [Blog and README integration examples](docs/integrations.md)
 
-| 按需查询 | 地址 | 在线主要内容 |
+| Query | Route | Main content while online |
 | --- | --- | --- |
-| 完整状态，组合页面推荐 | `/api/now` | 一次获取快照；原有字段保留，音乐可附成对封面／歌曲 URL |
-| 音乐 | `/api/music` | 播放状态、歌名、歌手、可空的 Apple 封面／歌曲 URL |
-| 前台应用 | `/api/apps/active` | 应用名、静态图标与图片 API 地址 |
-| 运行应用 | `/api/apps/running` | 应用对象数组；未采集为 `null` |
-| 设备 | `/api/device` | 电池与系统负载 |
+| Full status, recommended for combined views | `/api/now` | One complete snapshot; existing fields remain, with optional paired artwork/track URLs for music |
+| Music | `/api/music` | Playback state, title, artist, and nullable Apple artwork/track URLs |
+| Foreground app | `/api/apps/active` | App name, static icon URL, and image API URL |
+| Running apps | `/api/apps/running` | An array of app objects; `null` when not collected |
+| Device | `/api/device` | Battery information and system load |
 
-每个状态 GET 都读取一次 KV；需要多类数据时只请求一次 `/api/now`，不要并行轮询全部分类接口。音乐分类接口直接返回 Mac 上报的 URL，旧 Agent 未上报时返回 `null`；首页不额外调用 `/api/music`。[常用 curl 与图片示例](docs/integrations.md#按需选择接口)
+Each status GET reads KV once. When you need several categories, request `/api/now` once instead of polling every category endpoint in parallel. The music endpoint returns URLs reported by the Mac, or `null` when an older Agent does not report them. The home page makes no additional `/api/music` call. [Common curl and image examples](docs/integrations.md#按需选择接口)
 
+When updating an existing deployment, **deploy the Worker with optional music URL support before reinstalling the Mac Agent**; an older Worker rejects the new fields. See the [deployment guide](docs/deployment.md#升级音乐封面上报) for the upgrade steps.
 
-更新已有部署时，**先发布支持可选音乐 URL 的 Worker，再重新安装 Mac Agent**；旧 Worker 会拒绝新增字段。更新步骤见 [部署指南](docs/deployment.md#升级音乐封面上报)。
+## Live instance
 
-## 已部署实例
+Maintainer instance: [Status and docs](https://macflare.lucius7.dev/) · [JSON](https://macflare.lucius7.dev/api/now) · [SVG badge](https://macflare.lucius7.dev/api/badge.svg). These addresses expose the maintainer's public status and are not a shared ingest service for other devices.
 
-维护者实例：[状态与文档](https://macflare.lucius7.dev/) · [JSON](https://macflare.lucius7.dev/api/now) · [SVG 徽章](https://macflare.lucius7.dev/api/badge.svg)。这些地址展示维护者的公开状态，不是其他设备的共享写入服务。
+## Documentation and contributions
 
-## 文档与贡献
-
-- [快速开始](docs/getting-started.md)、[部署和域名](docs/deployment.md)、[本机配置](docs/configuration.md)
-- [HTTP API](docs/api.md)、[OpenAPI 3.1](docs/openapi.yaml)、[接入示例](docs/integrations.md)、[应用图标](docs/app-icons.md)
-- [免费额度](docs/quotas.md)、[架构](docs/architecture.md)、[隐私](docs/privacy.md)、[排错](docs/troubleshooting.md)
-- [贡献指南](CONTRIBUTING.md)、[行为规范](CODE_OF_CONDUCT.md)、[路线图](docs/roadmap.md)
+- [Quick start](docs/getting-started.md), [Deployment and domains](docs/deployment.md), [Local configuration](docs/configuration.md)
+- [HTTP API](docs/api.md), [OpenAPI 3.1](docs/openapi.yaml), [Integration examples](docs/integrations.md), [App icons](docs/app-icons.md)
+- [Free quotas](docs/quotas.md), [Architecture](docs/architecture.md), [Privacy](docs/privacy.md), [Troubleshooting](docs/troubleshooting.md)
+- [Contributing](CONTRIBUTING.md), [Code of conduct](CODE_OF_CONDUCT.md), [Roadmap](docs/roadmap.md)
 
 ```sh
 npm ci
@@ -109,6 +108,6 @@ npm test
 npm run check
 ```
 
-CI 验证 Worker、macOS 原生脚本、文档构建与部署预检查。文档与 API 一起由 Cloudflare Worker 发布，无需 GitHub Pages。[文档维护](docs/documentation.md)
+CI validates the Worker, native macOS scripts, documentation build, and deployment preflight. Documentation and the API are published together by the Cloudflare Worker, without GitHub Pages. [Documentation maintenance](docs/documentation.md)
 
-代码采用 [MIT License](LICENSE)；应用图标归各自软件作者所有，不包含在 MIT 授权中。MacFlare 是独立开源项目，与 Apple 或 Cloudflare 无隶属关系。
+Code is licensed under the [MIT License](LICENSE). App icons belong to their respective software authors and are not covered by the MIT license. MacFlare is an independent open-source project with no affiliation to Apple or Cloudflare.

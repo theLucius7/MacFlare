@@ -1,16 +1,16 @@
-# 行为规范
+# Code of conduct
 
-本规范适用于项目的 Issue、Pull Request、代码评审和其他由维护者管理的协作空间。不同经验和背景的参与者都应得到尊重。
+This code applies to project issues, pull requests, code reviews, and other collaboration spaces managed by the maintainers. Participants of different backgrounds and experience levels deserve respect.
 
-## 协作约定
+## Collaboration standards
 
-- 围绕具体问题、证据和代码讨论，批评观点与实现，避免针对个人。
-- 接受他人可能有不同经验，给出可操作的反馈，耐心澄清误解。
-- 不进行骚扰、歧视、威胁、人身攻击或持续的恶意打扰。
-- 不未经允许公开他人的身份信息、联系方式、凭据或个人设备状态。
+- Discuss specific problems, evidence, and code. Critique ideas and implementations without targeting people.
+- Recognize that others may have different experience, give actionable feedback, and clarify misunderstandings patiently.
+- Do not harass, discriminate, threaten, make personal attacks, or repeatedly disrupt others in bad faith.
+- Do not publish another person's identifying information, contact details, credentials, or personal device status without permission.
 
-## 报告与处理
+## Reporting and enforcement
 
-发现公开讨论中的问题，可以请求维护者介入，并提供相关 Issue 或评论链接。涉及个人敏感信息时，先请求私密联系渠道，不将细节公开。技术漏洞请使用 [安全报告流程](SECURITY.md)。
+If you encounter a problem in a public discussion, ask a maintainer to intervene and provide the relevant issue or comment links. When sensitive personal information is involved, first request a private contact channel and do not publish the details. Report technical vulnerabilities through the [security reporting process](SECURITY.md).
 
-维护者根据上下文和严重程度处理违规行为，可以提醒、要求修改内容、隐藏评论、锁定讨论或限制参与。维护者也受本规范约束；处理时应说明依据，尽量减少无关个人信息的传播。
+Maintainers consider the context and severity of violations. They may give reminders, request edits, hide comments, lock discussions, or restrict participation. Maintainers are also subject to this code. They should explain the basis for their decisions and minimize the spread of unrelated personal information.
