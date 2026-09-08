@@ -5,7 +5,7 @@ info:
   summary: 原生 macOS 状态的单向公开快照 API
   description: >-
     单设备协议 schema_version=1。写入须 Bearer 鉴权，查询公开。
-    KV expirationTtl 固定 60 秒，读取按服务端时间判断新鲜度；KV 最终一致可能造成旧值或暂时离线。
+    KV expirationTtl 由服务器配置，默认 eco 180 秒，realtime 60 秒，读取按服务端时间判断新鲜度；KV 最终一致可能造成旧值或暂时离线。
     已知路径支持 OPTIONS 204，不支持 HEAD；未知路径返回 404。查询参数不改变行为。
     JSON/SVG 响应均设置 CORS * 与 no-store。示例都是合成数据，发送前必须更新 collected_at。
   license:
@@ -15,6 +15,8 @@ info:
     name: MacFlare contributors
     url: https://github.com/theLucius7/MacFlare
 servers:
+  - url: https://macflare.lucius7.dev
+    description: 维护者的公开实例，写入需要维护者的接收令牌
   - url: https://{worker}.{subdomain}.workers.dev
     description: 替换为自己的部署地址
     variables:
@@ -26,7 +28,7 @@ servers:
     description: Wrangler 本地开发，默认不连接线上 KV
 security: []
 paths:
-  /update:
+  /api/update:
     post:
       operationId: updateStatus
       summary: 验证并覆盖当前快照
@@ -52,7 +54,7 @@ paths:
               music: {state: playing, track: Example Song, artist: Example Artist}
       responses:
         '200':
-          description: KV 写入成功，已设置 60 秒 TTL
+          description: KV 写入成功，已设置服务端配置的 TTL
           content:
             application/json:
               schema:
@@ -93,12 +95,12 @@ paths:
       responses:
         '204':
           $ref: '#/components/responses/Preflight'
-  /now:
+  /api/now:
     get:
       operationId: getStatus
       summary: 读取当前公开状态
       description: >-
-        最近收到的快照早于 60 秒、缺失或损坏时返回 offline。
+        快照到达 expires_at、缺失或损坏时返回 offline。
         online 不表示用户在场，也不保证所有指标可用。KV 读取失败返回 503。
       responses:
         '200':
@@ -118,7 +120,7 @@ paths:
       responses:
         '204':
           $ref: '#/components/responses/Preflight'
-  /badge.svg:
+  /api/badge.svg:
     get:
       operationId: getBadge
       summary: 生成公开 SVG 状态徽章
@@ -138,7 +140,7 @@ paths:
       responses:
         '204':
           $ref: '#/components/responses/Preflight'
-  /health:
+  /api/health:
     get:
       operationId: getHealth
       summary: Worker 路由健康检查
@@ -297,7 +299,7 @@ components:
           description: 服务端接收时间
         expires_at:
           $ref: '#/components/schemas/UtcTimestamp'
-          description: updated_at 加60秒
+          description: 服务端截止时间；eco 通常为 updated_at 加180秒，realtime 加60秒
     OnlineStatus:
       allOf:
         - $ref: '#/components/schemas/SnapshotFields'

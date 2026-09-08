@@ -14,11 +14,12 @@
 
 ## 配置文件
 
-仓库提供 [示例配置](../agent/config.example.json)。以下为保留电池、负载、前台应用和音乐、关闭运行应用列表的示例：
+仓库提供 [示例配置](https://github.com/theLucius7/MacFlare/blob/main/agent/config.example.json)。以下为保留电池、负载、前台应用和音乐、关闭运行应用列表的示例：
 
 ```json
 {
   "endpoint": "https://macflare.your-subdomain.workers.dev",
+  "profile": "eco",
   "privacy": {
     "active_app": true,
     "running_apps": false,
@@ -32,7 +33,8 @@
 
 | 配置 | 默认值 | 行为 |
 | --- | --- | --- |
-| `endpoint` | 无 | 部署的 HTTPS origin；不要添加 `/update`、查询参数、账号或密码 |
+| `endpoint` | 无 | 部署的 HTTPS origin；不要添加 `/api` 或 `/api/update`、查询参数、账号或密码 |
+| `profile` | 新安装 `eco`；旧配置未声明时 `realtime` | `eco` 每 120 秒，`realtime` 每 30 秒；修改后须重新安装以更新调度 |
 | `privacy.active_app` | `true` | 是否采集前台应用名称；关闭时输出 `null` |
 | `privacy.running_apps` | `true` | 是否采集经过过滤的 GUI 应用名称；关闭时省略 `running_apps` |
 | `privacy.battery` | `true` | 是否采集电池；关闭时数值/充电状态为 `null`，来源为 `unknown` |
@@ -67,7 +69,7 @@
 
 自定义配置路径推送时，其同级目录必须有名为 `token` 的文件。Agent 接受 32–512 个合法 Bearer 字符的令牌，推荐 `openssl rand -hex 32` 生成的 64 字符值。Worker 可接受更宽的长度范围，但自带 Agent 应使用上述兼容值。
 
-修改已安装 `config.json` 后，下次执行直接读取新设置，无需重装。想立即让隐私变更生效，先预览，再手动推送一次。修改仓库里的运行代码后，需要重装以更新后台使用的副本；再次安装会保留隐私设置和追加屏蔽名单。
+修改已安装 `config.json` 的 endpoint 或隐私设置后，下次执行直接读取。修改 `profile` 必须重新运行安装脚本，以重新生成并加载调度；同时匹配 Worker TTL。想立即让隐私变更生效，先预览，再手动推送一次。修改仓库里的运行代码后，需要重装以更新后台使用的副本；再次安装会保留隐私设置和追加屏蔽名单。
 
 ## 安装选项
 
@@ -81,7 +83,10 @@
 # 只安装文件供检查，不加载后台任务。
 /bin/bash scripts/install.sh --endpoint https://<worker>.<subdomain>.workers.dev --no-start
 
-# 更新现有安装，复用 endpoint 和 token。
+# 切换为省额度模式；先把 Worker STATUS_TTL_SECONDS 设为180并部署。
+/bin/bash scripts/install.sh --profile eco
+
+# 更新现有安装，复用 endpoint、token 和已有 profile。
 /bin/bash scripts/install.sh
 ```
 
@@ -89,7 +94,7 @@
 
 ## 调度和诊断
 
-当前版本生成 `StartInterval: 30`、`RunAtLoad: true` 的 Aqua 用户会话 LaunchAgent。它在登录后运行；休眠和注销时不保持在线，也不主动唤醒设备。间隔目前固定 30 秒，没有 `interval` 配置键。重新安装会重新生成 plist，因此手动改 plist 不是持久的配置入口。默认所有有效快照均尝试上传，没有内置每日写入配额计数或暂停机制；使用免费 KV 时请结合 [配额约束](architecture.md#配额与调度) 控制运行时长。
+生成 `RunAtLoad: true` 的 Aqua 用户会话 LaunchAgent，`StartInterval` 由 profile 决定：eco 为 120 秒，realtime 为 30 秒。它在登录后运行；休眠和注销时不保持在线，不主动唤醒设备。没有任意 `interval` 配置键，手动编辑 plist 会在重装时被覆盖。每轮有效快照尝试上传，没有每日写入计数器；单设备 eco 每日定时写入约 720 次。详见 [额度和模式](quotas.md)。
 
 ```sh
 launchctl print "gui/$(id -u)/com.macflare.agent"
@@ -116,4 +121,4 @@ cat "$HOME/Library/Application Support/MacFlare/last-result.json"
 /bin/bash scripts/uninstall.sh --purge
 ```
 
-卸载不删除 Cloudflare Worker 或 KV 命名空间。最后一次接受的快照会在服务端新鲜度达到 60 秒后视为 offline；第三方缓存可能继续展示先前保存的状态。永久删除云端部署见 [部署指南](deployment.md#停止与删除)。
+卸载不删除 Cloudflare Worker 或 KV 命名空间。最后一次接受的快照会在服务端截止时间（eco 180 秒，realtime 60 秒）后视为 offline；第三方缓存可能继续展示先前保存的状态。永久删除云端部署见 [部署指南](deployment.md#停止与删除)。

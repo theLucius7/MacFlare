@@ -1,6 +1,6 @@
 # 部署与验收
 
-每个 Worker/KV 部署代表一台 Mac。以下示例中的域名和 ID 都是占位符，需替换为自己账户中的真实值。项目不会自动购买或升级 Cloudflare 套餐。
+每个 Worker/KV 部署代表一台 Mac。除明确注明的维护者实例外，以下示例中的域名和 ID 都是占位符，需替换为自己账户中的真实值。项目不会自动购买或升级 Cloudflare 套餐。
 
 ## 前提
 
@@ -9,7 +9,7 @@
 - Cloudflare 账户具有部署 Workers 和创建 Workers KV 命名空间的权限。
 - GitHub 账户只用于克隆或贡献项目，Mac 状态上报不需要 GitHub 凭据。
 
-先核对用量：默认 30 秒间隔一天约 2,880 次 KV 写入。免费配额目前是 1,000 次/日，超出后写入失败；即使调为 60 秒，也无法实现免费配额内全天保持 60 秒 TTL。可以只在需要的时段运行，或接受更长推送间隔产生的离线窗口；套餐选择由部署者决定。[Cloudflare KV 定价](https://developers.cloudflare.com/kv/platform/pricing/) · [详细计算](architecture.md#配额与调度)
+新安装默认 eco：120 秒推送、180 秒 TTL，全天约 720 次 KV 写入；免费配额为每日 1,000 次，手动操作与同账户其他项目另计。旧无 profile 的本机配置保留 realtime，升级时显式切换。参见 [免费额度与模式](quotas.md)。
 
 ## 部署 Worker
 
@@ -43,9 +43,9 @@ read -r -p "Cloudflare account ID: " CLOUDFLARE_ACCOUNT_ID
 export CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID
 ```
 
-保持在同一终端继续下方的 KV、Secret 和部署步骤；Wrangler 自动读取环境变量，不需要 `wrangler login`。完成部署后运行 `unset CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID` 清除当前 shell 的变量。CI 环境应由平台 Secret 注入同名变量，本仓库 CI 只运行检查，不自动部署。
+保持在同一终端继续下方的 KV、Secret 和部署步骤；Wrangler 自动读取环境变量，不需要 `wrangler login`。完成部署后运行 `unset CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID` 清除当前 shell 的变量。CI 环境应由平台 Secret 注入同名变量，本仓库 CI 检查代码、原生脚本和文档构建，不自动部署 Cloudflare。
 
-**Cloudflare API Token 只用于管理云端资源；`INGEST_TOKEN` 只用于 Mac 向 `/update` 上报。** 两者必须分别生成和保存，不要把账户凭据放入本机 Agent 的 `token` 文件、Worker 的 `INGEST_TOKEN`、`.dev.vars` 或前端。账户 ID 是资源标识，不是密码，但仍应确认它对应本次部署账户。
+**Cloudflare API Token 只用于管理云端资源；`INGEST_TOKEN` 只用于 Mac 向 `/api/update` 上报。** 两者必须分别生成和保存，不要把账户凭据放入本机 Agent 的 `token` 文件、Worker 的 `INGEST_TOKEN`、`.dev.vars` 或前端。账户 ID 是资源标识，不是密码，但仍应确认它对应本次部署账户。
 
 ### 创建并绑定 KV
 
@@ -69,6 +69,32 @@ npm run deploy
 
 部署输出的 `https://<worker>.<subdomain>.workers.dev` 是本机配置所需的基础地址。无需在 Mac 上开放入站端口，也不需要 Cloudflare Tunnel。
 
+## 自定义域名
+
+Worker 的 Custom Domain 同时服务主页、文档和 `/api/*`，无需另外部署 Pages，也不需要给静态文档创建 KV 键。
+
+在自己的 Wrangler 配置中添加：
+
+```json
+"routes": [{ "pattern": "macflare.example.com", "custom_domain": true }]
+```
+
+域名必须属于当前 Cloudflare 账户的活动 zone，目标子域名不能已有冲突的 CNAME。运行 `npm run deploy` 后由 Cloudflare 管理 DNS 和证书。保留 `workers_dev: true` 可继续使用原 workers.dev 地址。[官方 Custom Domains 指南](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/)
+
+确认 `https://macflare.example.com/api/health` 正常，再更新本机：
+
+```sh
+/bin/bash scripts/install.sh --endpoint https://macflare.example.com --profile eco
+```
+
+维护者实例为 `https://macflare.lucius7.dev`。普通使用者应部署自己的实例，不向维护者实例上传。
+
+### 静态页面与 API 路由
+
+`npm run deploy` 先构建 `docs/.vitepress/dist`，Wrangler 将这些静态资产与 Worker 一起发布。`/api/*` 以及旧 `/now`、`/update`、`/badge.svg`、`/health` 走 Worker；其他页面由静态资产处理。旧上传入口直接处理请求，不通过重定向传递 Bearer。
+
+不要删除 `assets.run_worker_first` 中的 API 规则，否则文档导航请求可能误吞 API。部署后验证 `/` 是 HTML、`/api/now` 是 JSON、`/api/badge.svg` 是 SVG、未知 `/api/*` 返回 JSON 404。
+
 ## 安装与现场验收
 
 先查看待公开的真实采集内容：
@@ -87,18 +113,18 @@ npm run deploy
 
 按顺序核验：
 
-1. `GET /health` 返回 `{"ok":true,"service":"macflare"}`。这只证明 Worker 路由可以响应，不能证明 KV 或 Mac 正常。
-2. 无 Bearer 的 `POST /update` 返回 401，确保未开放匿名写入。
-3. 手动执行 Agent 单次推送，确认成功；再请求 `/now`，核对电量、应用名称和快照时间。KV 跨位置传播可能延迟，不应每秒密集重试。
+1. `GET /api/health` 返回 `{"ok":true,"service":"macflare"}`。这只证明 Worker 路由可以响应，不能证明 KV 或 Mac 正常。
+2. 无 Bearer 的 `POST /api/update` 返回 401，确保未开放匿名写入。
+3. 手动执行 Agent 单次推送，确认成功；再请求 `/api/now`，核对电量、应用名称和快照时间。KV 跨位置传播可能延迟，不应每秒密集重试。
 4. 观察至少两个后台调度周期，确认 `updated_at` 有变化；一次手动成功不能证明 LaunchAgent 有效。
 5. Music 正在播放时，分别验证手动采集与后台周期中的歌名、歌手；暂停、退出和拒绝授权分别检查降级语义。后台自动化授权主体可能显示为 **bash**，需用户允许它控制 Music，不能用前台成功代替后台验证。见 [Music 授权排查](troubleshooting.md#music-状态为空或不可用)。
-6. 停止后台任务，等待最后一次更新超过 60 秒，再直接请求 `/now`，应为 offline。GitHub 徽章缓存不用于此验收。
+6. 停止后台任务，等待超过响应中的 `expires_at`（eco 约 180 秒，realtime 60 秒），再直接请求 `/api/now`，应为 offline。GitHub 徽章缓存不用于此验收。
 7. 按需重新安装启用后台，并记录实际验证日期、版本和未解决问题。
 
 ```sh
-curl -i https://<worker>.<subdomain>.workers.dev/health
-curl -i -X POST https://<worker>.<subdomain>.workers.dev/update
-curl -sS https://<worker>.<subdomain>.workers.dev/now
+curl -i https://<worker>.<subdomain>.workers.dev/api/health
+curl -i -X POST https://<worker>.<subdomain>.workers.dev/api/update
+curl -sS https://<worker>.<subdomain>.workers.dev/api/now
 ```
 
 不要将真实公开快照和令牌作为仓库测试夹具。当前实机验证应以实际部署记录为准，不能仅凭本文步骤判断已完成。
@@ -119,7 +145,7 @@ npm test
 npm run check
 ```
 
-Worker 单元测试覆盖协议与异常分支，`check` 包含语法及打包预检查。它们不验证账户权限、远端 KV 传播或 macOS 系统授权。
+Worker 单元测试覆盖协议与异常分支，`check` 包含文档构建、静态链接检查、语法及打包预检查。它们不验证账户权限、远端 KV 传播或 macOS 系统授权。
 
 ## 更新与回滚
 

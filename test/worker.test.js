@@ -34,7 +34,7 @@ function setup() {
 }
 
 function request(path = "/update", payload = sample(), options = {}) {
-  return new Request(`https://example.test${path}`, path === "/update" ? {
+  return new Request(`https://example.test${path}`, ["/update", "/api/update"].includes(path) ? {
     method: "POST",
     body: JSON.stringify(payload),
     headers: { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "application/json", ...options.headers },
@@ -50,7 +50,7 @@ test("ingress stores only one latest record with exact TTL and server timestamps
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { ok: true, updated_at: new Date(NOW).toISOString(), expires_at: new Date(NOW + 60_000).toISOString() });
   assert.deepEqual(calls[0], { method: "put", key: "now", options: { expirationTtl: 60 } });
-  assert.deepEqual(JSON.parse(values.get("now")), { received_at: NOW, data: first });
+  assert.deepEqual(JSON.parse(values.get("now")), { received_at: NOW, expires_at: NOW + 60_000, data: first });
   await handleRequest(request("/update", { ...sample(), active_app: "Terminal" }), env, NOW + 10_000);
   assert.equal(values.size, 1);
   assert.equal(JSON.parse(values.get("now")).data.active_app, "Terminal");
@@ -81,6 +81,93 @@ test("missing and >=60-second-old cached KV values produce only offline", async 
   assert.deepEqual(calls[0].options, { type: "text", cacheTtl: 30 });
 });
 
+test("configured TTL accepts decimal strings and integer numbers, preserving protocol fields", async () => {
+  for (const configured of [60, "60", 180, "180", 3600, "3600"]) {
+    const { env, calls, values } = setup();
+    env.STATUS_TTL_SECONDS = configured;
+    const ttl = Number(configured);
+    const response = await handleRequest(request(), env, NOW);
+    assert.equal(response.status, 200, String(configured));
+    assert.deepEqual(await response.json(), {
+      ok: true, updated_at: new Date(NOW).toISOString(), expires_at: new Date(NOW + ttl * 1000).toISOString(),
+    });
+    assert.deepEqual(calls[0], { method: "put", key: "now", options: { expirationTtl: ttl } });
+    assert.deepEqual(JSON.parse(values.get("now")), { received_at: NOW, expires_at: NOW + ttl * 1000, data: sample() });
+    const online = await (await handleRequest(request("/now"), env, NOW + ttl * 1000 - 1)).json();
+    assert.deepEqual(online, {
+      status: "online", updated_at: new Date(NOW).toISOString(), expires_at: new Date(NOW + ttl * 1000).toISOString(), ...sample(),
+    });
+    const badge = await (await handleRequest(request("/badge.svg"), env, NOW + ttl * 1000 - 1)).text();
+    assert.match(badge, /A song/u);
+    for (const age of [ttl * 1000, ttl * 1000 + 1]) {
+      assert.deepEqual(await (await handleRequest(request("/now"), env, NOW + age)).json(), { status: "offline" });
+      const offlineBadge = await (await handleRequest(request("/badge.svg"), env, NOW + age)).text();
+      assert.match(offlineBadge, /offline/u);
+      assert.doesNotMatch(offlineBadge, /A song/u);
+    }
+  }
+});
+
+test("invalid TTL configuration fails closed before any KV operation", async () => {
+  for (const configured of [null, true, false, 0, 59, 3601, 60.5, NaN, Infinity, "", "060", " 180", "180 ", "180.0", "1.8e2", "+180", "-60", "60seconds", {}, []]) {
+    const { env, calls } = setup();
+    env.STATUS_TTL_SECONDS = configured;
+    for (const path of ["/update", "/now", "/badge.svg"]) {
+      const response = await handleRequest(request(path), env, NOW);
+      assert.equal(response.status, 503, `${String(configured)} ${path}`);
+      assert.deepEqual(await response.json(), { error: "service_unavailable" });
+    }
+    assert.equal(calls.length, 0);
+  }
+});
+
+test("legacy records retain their original 60-second deadline under longer deployment TTL", async () => {
+  const { env, values } = setup();
+  env.STATUS_TTL_SECONDS = "180";
+  values.set("now", JSON.stringify({ received_at: NOW, data: sample() }));
+  const online = await (await handleRequest(request("/now"), env, NOW + 59_999)).json();
+  assert.equal(online.status, "online");
+  assert.equal(online.expires_at, new Date(NOW + 60_000).toISOString());
+  for (const age of [60_000, 90_000, 180_000]) {
+    assert.deepEqual(await (await handleRequest(request("/now"), env, NOW + age)).json(), { status: "offline" });
+  }
+});
+
+test("extending configured TTL cannot extend or revive a record past its original expiry", async () => {
+  const { env } = setup();
+  env.STATUS_TTL_SECONDS = "60";
+  await handleRequest(request(), env, NOW);
+  env.STATUS_TTL_SECONDS = "180";
+  const online = await (await handleRequest(request("/now"), env, NOW + 59_999)).json();
+  assert.equal(online.expires_at, new Date(NOW + 60_000).toISOString());
+  for (const age of [60_000, 120_000]) {
+    assert.deepEqual(await (await handleRequest(request("/now"), env, NOW + age)).json(), { status: "offline" });
+  }
+});
+
+test("shorter configured TTL caps existing records and their advertised deadline", async () => {
+  const { env } = setup();
+  env.STATUS_TTL_SECONDS = "180";
+  await handleRequest(request(), env, NOW);
+  env.STATUS_TTL_SECONDS = "60";
+  const online = await (await handleRequest(request("/now"), env, NOW + 59_999)).json();
+  assert.equal(online.status, "online");
+  assert.equal(online.expires_at, new Date(NOW + 60_000).toISOString());
+  assert.deepEqual(await (await handleRequest(request("/now"), env, NOW + 60_000)).json(), { status: "offline" });
+  const offlineBadge = await (await handleRequest(request("/badge.svg"), env, NOW + 60_000)).text();
+  assert.match(offlineBadge, /offline/u);
+  assert.doesNotMatch(offlineBadge, /A song/u);
+});
+
+test("malformed stored deadlines never become public", async () => {
+  const { env, values } = setup();
+  env.STATUS_TTL_SECONDS = "180";
+  for (const expiresAt of [null, "2026-09-08T10:03:00Z", NOW, NOW - 1, NOW + 59_000, NOW + 60_001, NOW + 3_601_000]) {
+    values.set("now", JSON.stringify({ received_at: NOW, expires_at: expiresAt, data: sample() }));
+    assert.deepEqual(await (await handleRequest(request("/now"), env, NOW)).json(), { status: "offline" });
+  }
+});
+
 test("bearer authentication fails closed without touching KV or parsing invalid JSON", async () => {
   const { env, calls } = setup();
   for (const header of ["", "Bearer wrong", `Basic ${TOKEN}`, `Bearer ${TOKEN}x`, `Bearer ${"x".repeat(1100)}`]) {
@@ -103,6 +190,8 @@ test("missing/short/whitespace tokens and missing binding return generic 503", a
 test("schema rejects unknown top-level and nested fields, bad types, ranges, and timestamps", async () => {
   const cases = [
     (d) => { d.secret = "must not leak"; },
+    (d) => { d.ttl_seconds = 3600; },
+    (d) => { d.expires_at = new Date(NOW + 3_600_000).toISOString(); },
     (d) => { d.battery.serial_number = "private"; },
     (d) => { d.system.command_line = "private"; },
     (d) => { d.music.album = "unsupported"; },
@@ -247,5 +336,77 @@ test("health, OPTIONS, methods and unknown routes behave without reading status"
   assert.equal(response.status, 405);
   assert.equal(response.headers.get("allow"), "GET, OPTIONS");
   assert.equal((await handleRequest(request("/update", sample(), { method: "GET", body: undefined }), env, NOW)).status, 405);
+  assert.equal(calls.length, 0);
+});
+
+test("canonical API routes and legacy aliases return identical bodies and headers without redirects", async () => {
+  const { env, values } = setup();
+  env.STATUS_TTL_SECONDS = "180";
+  const canonicalWrite = await handleRequest(request("/api/update"), env, NOW);
+  const legacyWrite = await handleRequest(request("/update"), env, NOW);
+  assert.equal(canonicalWrite.status, 200);
+  assert.equal(legacyWrite.status, 200);
+  assert.deepEqual([...canonicalWrite.headers], [...legacyWrite.headers]);
+  assert.equal(canonicalWrite.headers.get("location"), null);
+  assert.equal(await canonicalWrite.text(), await legacyWrite.text());
+  assert.equal(values.size, 1);
+
+  for (const path of ["/now", "/badge.svg", "/health"]) {
+    for (const age of [0, 180_000]) {
+      const canonical = await handleRequest(request(`/api${path}`), env, NOW + age);
+      const legacy = await handleRequest(request(path), env, NOW + age);
+      assert.equal(canonical.status, 200, path);
+      assert.equal(legacy.status, 200, path);
+      assert.deepEqual([...canonical.headers], [...legacy.headers]);
+      assert.equal(canonical.headers.get("location"), null);
+      assert.equal(await canonical.text(), await legacy.text());
+    }
+  }
+});
+
+test("canonical ingress rejects missing and invalid authorization before KV access", async () => {
+  const { env, calls } = setup();
+  for (const authorization of ["", "Bearer wrong"]) {
+    const response = await handleRequest(request("/api/update", sample(), {
+      headers: { Authorization: authorization },
+    }), env, NOW);
+    assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), { error: "unauthorized" });
+    assert.equal(response.headers.get("www-authenticate"), "Bearer");
+  }
+  assert.equal(calls.length, 0);
+});
+
+test("canonical and legacy OPTIONS and method restrictions match", async () => {
+  const { env, calls } = setup();
+  for (const prefix of ["", "/api"]) {
+    for (const route of ["/now", "/update", "/badge.svg", "/health"]) {
+      const path = `${prefix}${route}`;
+      const preflight = await handleRequest(request(path, sample(), { method: "OPTIONS", body: undefined }), env, NOW);
+      assert.equal(preflight.status, 204, path);
+      assert.equal(await preflight.text(), "");
+      assert.equal(preflight.headers.get("access-control-allow-origin"), "*");
+      assert.equal(preflight.headers.get("access-control-allow-methods"), "GET, POST, OPTIONS");
+      const wrongMethod = route === "/update" ? "GET" : "POST";
+      const response = await handleRequest(request(path, sample(), { method: wrongMethod, body: undefined }), env, NOW);
+      assert.equal(response.status, 405, path);
+      assert.equal(response.headers.get("allow"), `${route === "/update" ? "POST" : "GET"}, OPTIONS`);
+      assert.deepEqual(await response.json(), { error: "method_not_allowed" });
+    }
+  }
+  assert.equal(calls.length, 0);
+});
+
+test("unknown API paths always return JSON 404, including preflight", async () => {
+  const { env, calls } = setup();
+  for (const path of ["/api", "/api/", "/api/unknown", "/api/now/", "/api/api/now", "/api//now"]) {
+    for (const method of ["GET", "POST", "OPTIONS"]) {
+      const response = await handleRequest(request(path, sample(), { method }), env, NOW);
+      assert.equal(response.status, 404, `${method} ${path}`);
+      assert.match(response.headers.get("content-type"), /^application\/json/u);
+      assert.equal(response.headers.get("location"), null);
+      assert.deepEqual(await response.json(), { error: "not_found" });
+    }
+  }
   assert.equal(calls.length, 0);
 });

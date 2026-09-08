@@ -42,6 +42,51 @@ with tempfile.TemporaryDirectory(prefix='macflare-native-test-') as directory:
         assert result.returncode == expected, (result.returncode, result.stdout, result.stderr)
         assert secret not in result.stdout+result.stderr, 'secret appeared in process output'
         return result.stdout
+    def runtime(*args, expected=0):
+        return call(['/usr/bin/osascript', '-l', 'JavaScript', str(REPO/'agent/runtime.js'), *map(str, args)], expected=expected)
+
+    # Profile migration must preserve old schedules and privacy choices. Fixtures
+    # exercise both installation inputs without changing HOME or loading launchd.
+    origin = f'http://127.0.0.1:{server.server_port}'
+    fresh_path = fixture_root/'new-config.json'
+    fresh = json.loads(runtime('configure', fresh_path, origin))
+    assert fresh['profile'] == 'eco'
+    fresh_path.write_text(json.dumps(fresh))
+    assert json.loads(runtime('configure', fresh_path, ''))['profile'] == 'eco'
+    legacy_path = fixture_root/'legacy-config.json'
+    legacy = {'endpoint': origin, 'privacy': {'music': False, 'running_apps': False}, 'blocked_apps': ['Custom Private App']}
+    legacy_path.write_text(json.dumps(legacy))
+    migrated = json.loads(runtime('configure', legacy_path, ''))
+    assert migrated['profile'] == 'realtime'
+    assert migrated['privacy']['music'] is False and migrated['privacy']['running_apps'] is False
+    assert migrated['blocked_apps'] == legacy['blocked_apps'] and migrated['endpoint'] == origin
+    assert json.loads(legacy_path.read_text()) == legacy, 'configure must not rewrite its source file'
+    for selected in ['eco', 'realtime']:
+        overridden = json.loads(runtime('configure', legacy_path, '', selected))
+        assert overridden['profile'] == selected
+        assert overridden['privacy'] == migrated['privacy'] and overridden['blocked_apps'] == migrated['blocked_apps']
+    overridden = json.loads(runtime('configure', fresh_path, '', 'realtime'))
+    fresh_path.write_text(json.dumps(overridden))
+    assert json.loads(runtime('configure', fresh_path, ''))['profile'] == 'realtime'
+    assert json.loads(runtime('configure', fresh_path, '', 'eco'))['profile'] == 'eco'
+    staged_path = fixture_root/'staged-eco.json'
+    staged_path.write_text(runtime('configure', legacy_path, '', 'eco'))
+    staged_plist = plistlib.loads(runtime('plist', REPO/'agent/macflare.sh', legacy_path, staged_path).encode())
+    assert staged_plist['StartInterval'] == 120
+    assert staged_plist['ProgramArguments'][-1] == str(legacy_path), 'staged profile must retain the final config path'
+    assert plistlib.loads(runtime('plist', REPO/'agent/macflare.sh', legacy_path).encode())['StartInterval'] == 30
+    assert 'every 120 seconds' in runtime('schedule-message', staged_path)
+    assert 'must be 180' in runtime('schedule-message', staged_path)
+    assert 'every 30 seconds' in runtime('schedule-message', legacy_path)
+    assert 'must be 60' in runtime('schedule-message', legacy_path)
+    invalid_path = fixture_root/'invalid-profile.json'
+    for invalid_profile in ['fast', '__proto__', None, 120]:
+        invalid_path.write_text(json.dumps(dict(legacy, profile=invalid_profile)))
+        runtime('configure', invalid_path, '', expected=1)
+        runtime('validate', invalid_path, secret_source, expected=1)
+    call([str(REPO/'scripts/install.sh'), '--profile', 'invalid'], expected=2)
+    call([str(REPO/'scripts/install.sh'), '--profile'], expected=2)
+
     configured = call(['/usr/bin/osascript', '-l', 'JavaScript', str(REPO/'agent/runtime.js'), 'configure', str(config), f'http://127.0.0.1:{server.server_port}'])
     config.write_text(configured)
     config.chmod(0o600)
@@ -55,10 +100,11 @@ with tempfile.TemporaryDirectory(prefix='macflare-native-test-') as directory:
     assert plist['ProgramArguments'] == ['/bin/bash',str(installed),'--once','--config',str(config)]
     printed = json.loads(agent('--print'))
     assert printed['schema_version'] == 1 and printed['music']['state'] == 'unavailable'
+    assert 'profile' not in printed, 'local scheduling configuration must not change the API payload'
     assert not {'Passwords','System Settings','ChatGPT'} & set(printed['running_apps'])
     assert printed['active_app'] != 'ChatGPT'
     agent('--once')
-    assert len(requests) == 1 and requests[-1][0] == '/update' and requests[-1][1] == 'Bearer '+secret
+    assert len(requests) == 1 and requests[-1][0] == '/api/update' and requests[-1][1] == 'Bearer '+secret
     result = json.loads((support/'last-result.json').read_text())
     assert result['success'] is True and result['http_status'] == 204
     reply['status'] = 302
@@ -93,4 +139,4 @@ with tempfile.TemporaryDirectory(prefix='macflare-native-test-') as directory:
     assert merged['music']['track'] == '星晴 🌌 "测试"'
     assert len(merged_raw.encode()) <= 15001 and len(merged['running_apps']) < 64
 server.shutdown()
-print('PASS: native plist, permission checks, collection/privacy, push/auth, HTTP errors/no redirects, Unicode and payload budget')
+print('PASS: profile migration/validation and staged schedules, native plist, permission checks, collection/privacy, push/auth, HTTP errors/no redirects, Unicode and payload budget')

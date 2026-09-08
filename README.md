@@ -1,32 +1,42 @@
 # MacFlare
 
-**用 macOS 原生能力，把此刻的 Mac 状态发布到 Cloudflare。**
+**用 macOS 原生工具，将此刻的 Mac 状态推送到 Cloudflare。**
 
-MacFlare 为博客、GitHub README 和 Now Page 提供电池、前台应用、正在运行的 GUI 应用、系统负载和 Apple Music 播放状态。Mac 只主动推送；云端只保存当前快照，公开读取接口不能向 Mac 执行命令或请求本地数据。
+[![CI](https://github.com/theLucius7/MacFlare/actions/workflows/ci.yml/badge.svg)](https://github.com/theLucius7/MacFlare/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-本地运行只使用系统自带的 Bash、`osascript`、`curl`、`pmset` 等工具，通过原生 `launchd` 调度。**不需要 Node.js、Python、jq、Homebrew、pm2 或第三方音乐客户端。** Node.js 和 Wrangler 仅用于开发和部署 Cloudflare Worker。
+[状态与文档](https://macflare.lucius7.dev/) · [快速开始](https://macflare.lucius7.dev/getting-started) · [API](https://macflare.lucius7.dev/api) · [变更记录](CHANGELOG.md) · [安全报告](SECURITY.md)
 
-> 当前设计采用 30 秒推送、60 秒 KV TTL。持续运行一天约写入 2,880 次，超过 Cloudflare KV 免费计划目前的 1,000 次/日。60 秒 TTL 与全天连续在线无法同时满足免费写入配额；本项目不会自动升级套餐。[配额计算与取舍](docs/architecture.md#配额与调度)
+MacFlare 为个人博客、Now Page 和 GitHub README 提供 Apple Music 歌曲、前台应用、运行中的 GUI 应用、电池和系统负载。Mac 只主动推送，公网没有向 Mac 执行命令或拉取本地数据的通道。
+
+本机运行仅使用系统自带的 Bash、`osascript`、`curl`、`pmset` 和 `launchd`，**无需 Node.js、Python、jq、Homebrew、pm2 或第三方播放器**。Node.js 22+ 仅用于开发、云端部署和构建文档。
 
 ## 能力
 
-| 能力 | 行为 |
+| 功能 | 行为 |
 | --- | --- |
-| Apple Music | 上报播放状态、歌曲和歌手；未授权时降级 |
-| 应用状态 | 前台应用和运行中的 GUI 应用名称；不采集窗口标题或进程参数 |
-| 硬件状态 | 电量、充电、供电来源及系统负载平均值 |
-| 隐私控制 | 内置敏感应用屏蔽，可追加屏蔽名单并单独关闭采集项 |
-| 原生后台 | 用户登录后由 LaunchAgent 按间隔执行，无需 root |
-| 边缘 API | Bearer 鉴权写入、公开跨域查询、SVG 徽章、健康检查 |
-| 短时快照 | 固定 KV TTL 60 秒，并以服务端时间检查新鲜度 |
+| Apple Music | 播放／暂停／停止、歌名和歌手；未授权时独立降级 |
+| 应用状态 | 前台应用和 GUI 应用列表；不采集窗口标题、路径或进程参数 |
+| 硬件状态 | 电量、充电、供电来源和系统负载平均值 |
+| 隐私控制 | 敏感应用屏蔽、追加名单、各采集项独立开关 |
+| 原生后台 | 用户登录后运行的 LaunchAgent，可安装、更新和卸载 |
+| 边缘接口 | Bearer 写入、公开 CORS 查询、SVG 徽章、自动过期 |
+| 同站点文档 | 首页展示实时快照，文档静态托管，API 使用 `/api/*` |
 
-Cloudflare KV 是最终一致存储，跨边缘位置的更新可延迟 60 秒或更久；公开 API 可能短暂返回旧值或离线，不能当作秒级设备监控。[一致性与设计边界](docs/architecture.md#时间离线与一致性)
+## 更新模式与免费额度
+
+| 模式 | 上报间隔 | Worker TTL | 全天定时写入 |
+| --- | --- | --- | --- |
+| **eco（新安装默认）** | 120 秒 | 180 秒 | 约 720 次 |
+| realtime | 30 秒 | 60 秒 | 约 2,880 次 |
+
+eco 比 realtime 少写 **75%**，在免费 KV 每日 1,000 次写入中留出约 280 次余量。手动推送、登录启动、测试及同账户其他项目另计；这不是强制配额保护。旧配置未声明 `profile` 时保留 realtime，升级时须显式切换。[额度与切换方法](docs/quotas.md)
+
+状态新鲜度与省额度需要取舍：eco 最长约 3 分钟才判离线；KV 最终一致，跨边缘读取仍可能短暂看到旧值或离线。[架构边界](docs/architecture.md)
 
 ## 快速开始
 
-### 1. 部署云端
-
-准备一个 Cloudflare 账户，并在部署电脑上安装 Node.js 22 或更高版本。Mac Agent 本身不需要安装此环境。
+### 1. 部署自己的 Worker
 
 ```sh
 git clone https://github.com/theLucius7/MacFlare.git
@@ -36,9 +46,7 @@ npx wrangler login
 npx wrangler kv namespace create STATUS_KV
 ```
 
-已有 Cloudflare API Token 时，可按 [API Token 部署方式](docs/deployment.md#使用已有-api-token) 设置环境变量并跳过 `wrangler login`。
-
-将命令返回的命名空间 ID 填入 `wrangler.jsonc` 的 `kv_namespaces` 中，绑定名称保持 `STATUS_KV`。然后生成随机令牌，将其妥善保存到密码管理器，用作本机和 Worker 的同一接收凭据：
+把返回的命名空间 ID 填入 `wrangler.jsonc` 的 `kv_namespaces`，保留默认 `STATUS_TTL_SECONDS: "180"`。生成独立接收令牌，保存到密码管理器，再设置 Secret 并发布：
 
 ```sh
 openssl rand -hex 32
@@ -46,85 +54,42 @@ npx wrangler secret put INGEST_TOKEN
 npm run deploy
 ```
 
-`secret put` 会交互式要求输入令牌。保留部署结果中的 `https://<worker>.<subdomain>.workers.dev` 地址；不要把令牌添加到 URL、仓库或前端。首次部署的详细步骤和验收见 [部署指南](docs/deployment.md)。
+`secret put` 交互式要求输入令牌，`deploy` 构建并一起发布站点和 API。已有 Cloudflare API Token、自定义域名及权限见 [部署指南](docs/deployment.md)。Cloudflare 管理凭据和 `INGEST_TOKEN` 必须分开。
 
-### 2. 在 Mac 预览并安装
+### 2. 预览并安装到 Mac
 
 ```sh
 /bin/bash agent/macflare.sh --print
-/bin/bash scripts/install.sh --endpoint https://<worker>.<subdomain>.workers.dev
+/bin/bash scripts/install.sh --endpoint https://<worker>.<subdomain>.workers.dev --profile eco
 ```
 
-第一条命令只打印本机采集结果，不上传。安装时交互式输入同一令牌；脚本生成私有配置、复制运行文件并加载用户级 LaunchAgent。系统如弹出 Music 自动化授权，需由你手动决定是否允许；无法通过脚本静默授予。
-
-应用、歌曲和运行程序名称会通过公开接口展示。安装前先看预览，按 [配置说明](docs/configuration.md) 缩小公开范围。未打开 Music、未播放或拒绝授权时，Music 字段按实际情况降级，其余可用指标继续工作。
+将地址替换为**你自己的部署根域名**，不加 `/api`，交互输入同一接收令牌。Music 自动化授权需在 macOS 中允许；后台宿主可能显示为 **bash**。预览成功后，仍须核验后台周期。[配置与授权](docs/configuration.md)
 
 ### 3. 读取状态
 
 ```sh
-curl -sS https://<worker>.<subdomain>.workers.dev/health
-curl -sS https://<worker>.<subdomain>.workers.dev/now
+curl -sS https://<worker>.<subdomain>.workers.dev/api/now
 ```
 
-在线时返回结构化状态；没有新鲜快照时返回：
+在线时返回结构化状态；没有新鲜快照时返回 `{"status":"offline"}`。读取无需令牌，网站不能持有接收 Secret。[博客和 README 接入示例](docs/integrations.md)
 
-```json
-{"status":"offline"}
-```
+## 已部署实例
 
-浏览器页面无需携带令牌：
+维护者实例：[状态与文档](https://macflare.lucius7.dev/) · [JSON](https://macflare.lucius7.dev/api/now) · [SVG 徽章](https://macflare.lucius7.dev/api/badge.svg)。这些地址展示维护者的公开状态，不是其他设备的共享写入服务。
 
-```html
-<pre id="macflare">加载中…</pre>
-<script type="module">
-  const target = document.querySelector('#macflare');
-  try {
-    const response = await fetch('https://<worker>.<subdomain>.workers.dev/now');
-    if (!response.ok) throw new Error('Status unavailable');
-    const state = await response.json();
-    target.textContent = state.status === 'online'
-      ? `${state.active_app ?? '应用未公开'} · 电量 ${state.battery?.percent ?? '未知'}%`
-      : 'Mac 当前离线';
-  } catch {
-    target.textContent = '暂时无法读取状态';
-  }
-</script>
-```
+## 文档与贡献
 
-README 徽章：
-
-```md
-![MacFlare](https://<worker>.<subdomain>.workers.dev/badge.svg)
-```
-
-GitHub 的图片代理可能缓存徽章，核验最新状态请直接请求 `/now`。[完整 API](docs/api.md) · [OpenAPI 3.1](docs/openapi.yaml)
-
-## 文档
-
-- [部署与验收](docs/deployment.md)：Worker、KV、Secret、本地开发、更新与删除。
-- [配置与后台运行](docs/configuration.md)：隐私选项、屏蔽名单、调度及卸载。
-- [API 协议](docs/api.md)：字段、状态、错误和客户端接入。
-- [架构与配额](docs/architecture.md)：单向数据流、TTL、最终一致性和成本取舍。
-- [隐私与威胁模型](docs/privacy.md)：哪些内容公开，以及设计不能保证什么。
-- [故障排查](docs/troubleshooting.md)：授权、后台、网络、离线和配额问题。
-- [路线图](docs/roadmap.md)、[贡献指南](CONTRIBUTING.md)、[安全策略](SECURITY.md)。
-
-## 开发
+- [快速开始](docs/getting-started.md)、[部署和域名](docs/deployment.md)、[本机配置](docs/configuration.md)
+- [HTTP API](docs/api.md)、[OpenAPI 3.1](docs/openapi.yaml)、[接入示例](docs/integrations.md)
+- [免费额度](docs/quotas.md)、[架构](docs/architecture.md)、[隐私](docs/privacy.md)、[排错](docs/troubleshooting.md)
+- [贡献指南](CONTRIBUTING.md)、[行为规范](CODE_OF_CONDUCT.md)、[路线图](docs/roadmap.md)
 
 ```sh
 npm ci
-cp .dev.vars.example .dev.vars
-# 编辑 .dev.vars，换成自己的本地测试令牌。
-npm run dev
-```
-
-测试和部署预检查：
-
-```sh
 npm test
 npm run check
 ```
 
-`wrangler dev` 使用本地模拟存储，与线上 KV 分离。原生 Music 授权和 `launchd` 行为必须在 macOS 实机验证；Node 单元测试不能替代这些验收。
+CI 验证 Worker、macOS 原生脚本、文档构建与部署预检查。文档与 API 一起由 Cloudflare Worker 发布，无需 GitHub Pages。[文档维护](docs/documentation.md)
 
 采用 [MIT License](LICENSE)。MacFlare 是独立开源项目，与 Apple 或 Cloudflare 无隶属关系。

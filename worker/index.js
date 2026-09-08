@@ -1,4 +1,5 @@
-const TTL_SECONDS = 60;
+const LEGACY_TTL_SECONDS = 60;
+const MAX_TTL_SECONDS = 3600;
 const MAX_BODY_BYTES = 16 * 1024;
 const MAX_CLOCK_SKEW_MS = 120_000;
 const STATUS_KEY = "now";
@@ -154,28 +155,54 @@ async function authorized(request, token) {
   return difference === 0;
 }
 
-function timestamps(receivedAt) {
+function statusTtlSeconds(env) {
+  const configured = env.STATUS_TTL_SECONDS;
+  if (configured === undefined) return LEGACY_TTL_SECONDS;
+  if ((typeof configured !== "number" && typeof configured !== "string")
+    || (typeof configured === "string" && !/^[1-9]\d*$/u.test(configured))) {
+    throw new Error("Invalid status TTL configuration.");
+  }
+  const seconds = Number(configured);
+  if (!Number.isInteger(seconds) || seconds < LEGACY_TTL_SECONDS || seconds > MAX_TTL_SECONDS) {
+    throw new Error("Invalid status TTL configuration.");
+  }
+  return seconds;
+}
+
+function timestamps(receivedAt, expiresAt) {
   return {
     updated_at: new Date(receivedAt).toISOString(),
-    expires_at: new Date(receivedAt + TTL_SECONDS * 1000).toISOString(),
+    expires_at: new Date(expiresAt).toISOString(),
   };
 }
 
-async function currentStatus(env, now) {
+async function currentStatus(env, now, ttlSeconds) {
   // 30 seconds is KV's minimum edge cache TTL. HTTP caches remain disabled.
   const raw = await env.STATUS_KV.get(STATUS_KEY, { type: "text", cacheTtl: 30 });
   if (raw === null) return { status: "offline" };
   try {
     const record = JSON.parse(raw);
-    if (!keysMatch(record, ["received_at", "data"])
+    if (!keysMatch(record, ["received_at", "data"], ["expires_at"])
       || !Number.isSafeInteger(record.received_at)
       || record.received_at <= 0
-      || now < record.received_at
-      || now - record.received_at >= TTL_SECONDS * 1000) {
+      || now < record.received_at) {
       return { status: "offline" };
     }
+    // Legacy records were written with a fixed 60-second retention window.
+    // A later deployment must never extend the original stored deadline.
+    const storedExpiresAt = Object.hasOwn(record, "expires_at")
+      ? record.expires_at : record.received_at + LEGACY_TTL_SECONDS * 1000;
+    const storedTtlMs = storedExpiresAt - record.received_at;
+    if (!Number.isSafeInteger(storedExpiresAt)
+      || storedTtlMs < LEGACY_TTL_SECONDS * 1000
+      || storedTtlMs > MAX_TTL_SECONDS * 1000
+      || storedTtlMs % 1000 !== 0) {
+      return { status: "offline" };
+    }
+    const expiresAt = Math.min(storedExpiresAt, record.received_at + ttlSeconds * 1000);
+    if (now >= expiresAt) return { status: "offline" };
     const data = validateStatus(record.data, record.received_at);
-    return { status: "online", ...timestamps(record.received_at), ...data };
+    return { status: "online", ...timestamps(record.received_at, expiresAt), ...data };
   } catch {
     // Corrupt or expired data is never reflected into a public response.
     return { status: "offline" };
@@ -212,7 +239,10 @@ function badge(status) {
 
 export async function handleRequest(request, env, now = Date.now()) {
   try {
-    const path = new URL(request.url).pathname;
+    const pathname = new URL(request.url).pathname;
+    // /api/* is canonical. Legacy paths share the handler without redirects,
+    // so installed agents can keep posting their authenticated request bodies.
+    const path = pathname.startsWith("/api/") ? pathname.slice(4) : pathname;
     const method = path === "/update" ? "POST" : "GET";
     if (!["/update", "/now", "/badge.svg", "/health"].includes(path)) {
       return json({ error: "not_found" }, 404);
@@ -223,6 +253,7 @@ export async function handleRequest(request, env, now = Date.now()) {
     if (!env?.STATUS_KV || typeof env.STATUS_KV.get !== "function" || typeof env.STATUS_KV.put !== "function") {
       return json({ error: "service_unavailable" }, 503);
     }
+    const ttlSeconds = statusTtlSeconds(env);
     if (path === "/update") {
       if (typeof env.INGEST_TOKEN !== "string" || env.INGEST_TOKEN.length < 32
         || env.INGEST_TOKEN.length > 1024 || /\s/u.test(env.INGEST_TOKEN)) {
@@ -232,10 +263,11 @@ export async function handleRequest(request, env, now = Date.now()) {
         return json({ error: "unauthorized" }, 401, { "WWW-Authenticate": "Bearer" });
       }
       const data = validateStatus(await readJson(request), now);
-      await env.STATUS_KV.put(STATUS_KEY, JSON.stringify({ received_at: now, data }), { expirationTtl: TTL_SECONDS });
-      return json({ ok: true, ...timestamps(now) });
+      const expiresAt = now + ttlSeconds * 1000;
+      await env.STATUS_KV.put(STATUS_KEY, JSON.stringify({ received_at: now, expires_at: expiresAt, data }), { expirationTtl: ttlSeconds });
+      return json({ ok: true, ...timestamps(now, expiresAt) });
     }
-    const status = await currentStatus(env, now);
+    const status = await currentStatus(env, now, ttlSeconds);
     return path === "/badge.svg" ? badge(status) : json(status);
   } catch (error) {
     if (error instanceof ClientError) return json({ error: error.code }, error.status);

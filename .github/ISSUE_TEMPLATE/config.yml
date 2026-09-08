@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 私密报告安全漏洞 / Report a vulnerability
+    url: https://github.com/theLucius7/MacFlare/security/advisories/new
+    about: 安全漏洞请通过此入口私密提交；入口不可用时按 SECURITY.md 请求私密联系方式。
+  - name: 故障排查文档 / Troubleshooting
+    url: https://github.com/theLucius7/MacFlare/blob/main/docs/troubleshooting.md
+    about: Music 授权、后台运行、上传失败与离线状态的排查步骤。

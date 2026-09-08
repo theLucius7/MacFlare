@@ -1,0 +1,27 @@
+name: 功能建议 / Feature request
+description: 说明需要解决的问题及预期行为。
+title: '[Feature] '
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 希望解决什么问题
+      description: 描述使用场景及当前限制，避免只列实现方案。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 期望的行为
+      description: 用一个具体例子说明使用者会看到什么变化。
+    validations:
+      required: true
+  - type: textarea
+    id: tradeoffs
+    attributes:
+      label: 隐私、依赖与用量影响（如适用）
+      description: 是否新增公开字段、系统权限、运行依赖或云端请求；不确定可以注明。
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 已考虑的替代方案（可选）

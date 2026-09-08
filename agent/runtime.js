@@ -13,6 +13,17 @@ var BLOCKED_BUNDLE_PREFIXES = [
   'com.dashlane', 'com.lastpass'
 ];
 var PRIVACY_FIELDS = ['active_app', 'running_apps', 'battery', 'system', 'music'];
+var PROFILES = {
+  eco: { interval_seconds: 120, status_ttl_seconds: 180 },
+  realtime: { interval_seconds: 30, status_ttl_seconds: 60 }
+};
+
+function profile(value) {
+  if (value !== 'eco' && value !== 'realtime') {
+    throw new Error('profile must be eco or realtime.');
+  }
+  return value;
+}
 
 function readText(path, optional) {
   if (!$.NSFileManager.defaultManager.fileExistsAtPath(path)) {
@@ -33,11 +44,13 @@ function configuration(path) {
   var input = raw === null ? {} : JSON.parse(raw);
   if (!object(input)) throw new Error('Configuration must be a JSON object.');
   Object.keys(input).forEach(function (key) {
-    if (['endpoint', 'privacy', 'blocked_apps'].indexOf(key) < 0) {
+    if (['endpoint', 'profile', 'privacy', 'blocked_apps'].indexOf(key) < 0) {
       throw new Error('Unrecognized configuration key.');
     }
   });
-  var result = { endpoint: '', privacy: {}, blocked_apps: [] };
+  // Existing configurations predate profiles and must retain their 30-second cadence.
+  var result = { endpoint: '', profile: raw === null ? 'eco' : 'realtime', privacy: {}, blocked_apps: [] };
+  if (input.profile !== undefined) result.profile = profile(input.profile);
   if (input.endpoint !== undefined) {
     if (typeof input.endpoint !== 'string') throw new Error('endpoint must be a string.');
     result.endpoint = input.endpoint;
@@ -215,7 +228,14 @@ function run(args) {
   if (command === 'configure') {
     var config = configuration(args[1]);
     config.endpoint = endpoint(args[2] || config.endpoint);
+    if (args[3]) config.profile = profile(args[3]);
     return JSON.stringify(config, null, 2);
+  }
+  if (command === 'schedule-message') {
+    var selectedProfile = configuration(args[1]).profile;
+    var schedule = PROFILES[selectedProfile];
+    return 'Profile ' + selectedProfile + ': configured to update every ' + schedule.interval_seconds +
+      ' seconds; Worker STATUS_TTL_SECONDS must be ' + schedule.status_ttl_seconds + '.';
   }
   if (command === 'validate') {
     endpoint(configuration(args[1]).endpoint);
@@ -225,7 +245,7 @@ function run(args) {
   if (command === 'curl-config') {
     var origin = endpoint(configuration(args[1]).endpoint);
     return [
-      'url = ' + JSON.stringify(origin + '/update'),
+      'url = ' + JSON.stringify(origin + '/api/update'),
       'header = ' + JSON.stringify('Authorization: Bearer ' + token(args[2])),
       'header = "Content-Type: application/json"',
       'data-binary = ' + JSON.stringify('@' + args[3]),
@@ -246,13 +266,15 @@ function run(args) {
     });
   }
   if (command === 'plist') {
+    // An installer can provide its staged config while retaining the final argv path.
+    var installedProfile = configuration(args[3] || args[2]).profile;
     return '<?xml version="1.0" encoding="UTF-8"?>\n' +
       '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n' +
       '<plist version="1.0"><dict>\n' +
       '<key>Label</key><string>com.macflare.agent</string>\n' +
       '<key>ProgramArguments</key><array><string>/bin/bash</string><string>' + xml(args[1]) +
       '</string><string>--once</string><string>--config</string><string>' + xml(args[2]) + '</string></array>\n' +
-      '<key>StartInterval</key><integer>30</integer>\n' +
+      '<key>StartInterval</key><integer>' + PROFILES[installedProfile].interval_seconds + '</integer>\n' +
       '<key>RunAtLoad</key><true/>\n' +
       '<key>LimitLoadToSessionType</key><string>Aqua</string>\n' +
       '<key>ProcessType</key><string>Background</string>\n' +

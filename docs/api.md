@@ -6,15 +6,17 @@
 
 | 方法 | 路径 | 鉴权 | 功能 |
 | --- | --- | --- | --- |
-| `POST` | `/update` | `Authorization: Bearer <INGEST_TOKEN>` | 验证并覆盖当前快照 |
-| `GET` | `/now` | 无 | 读取在线快照或离线状态 |
-| `GET` | `/badge.svg` | 无 | 生成状态 SVG 徽章 |
-| `GET` | `/health` | 无 | 检查 Worker 能否响应，不读取 KV |
+| `POST` | `/api/update` | `Authorization: Bearer <INGEST_TOKEN>` | 验证并覆盖当前快照 |
+| `GET` | `/api/now` | 无 | 读取在线快照或离线状态 |
+| `GET` | `/api/badge.svg` | 无 | 生成状态 SVG 徽章 |
+| `GET` | `/api/health` | 无 | 检查 Worker 能否响应，不读取 KV |
 | `OPTIONS` | 以上已知路径 | 无 | CORS 预检，返回 204 |
 
-没有尾斜线别名；`/now/` 是未知路径。`HEAD` 未实现，返回 405。查询参数不改变响应。JSON 使用 `application/json; charset=utf-8`，SVG 使用 `image/svg+xml; charset=utf-8`。
+没有尾斜线别名；`/api/now/` 是未知路径。`HEAD` 未实现，返回 405。查询参数不改变响应。JSON 使用 `application/json; charset=utf-8`，SVG 使用 `image/svg+xml; charset=utf-8`。
 
-## POST /update
+旧 `/update`、`/now`、`/badge.svg`、`/health` 保留兼容且不重定向，新集成使用 `/api/*`。根路径 `/` 为状态主页，文档 API 参考页面位于 `/api`。
+
+## POST /api/update
 
 请求必须为未压缩 UTF-8 JSON，`Content-Type: application/json`（可带 charset），正文最大 **16,384 字节**。除下述可选 `running_apps` 外字段均必需；所有层级拒绝未知字段。未启用或不可用的指标必须按字段约定提供空值，不用虚假数值代替。
 
@@ -56,13 +58,13 @@
 {
   "ok": true,
   "updated_at": "2026-09-08T08:00:01.000Z",
-  "expires_at": "2026-09-08T08:01:01.000Z"
+  "expires_at": "2026-09-08T08:03:01.000Z"
 }
 ```
 
-`updated_at` 是服务器接收时间；`expires_at` 为它加 60 秒。写入完成后才返回成功，每次成功请求覆盖 KV 的 `now` 键并刷新 TTL，不追加历史。不要发送客户端 `updated_at`、`expires_at` 或 TTL 字段。建议由自带 Agent 处理安全读令牌和上传，避免手写含 Secret 的 shell 命令。
+`updated_at` 是服务器接收时间；`expires_at` 为该记录的服务端截止时间，eco 通常为接收时间加 180 秒、realtime 为加 60 秒；读取时也受当前服务器策略限制。写入完成后才返回成功，每次成功请求覆盖 KV 的 `now` 键并刷新 TTL，不追加历史。不要发送客户端 `updated_at`、`expires_at` 或 TTL 字段。建议由自带 Agent 处理安全读令牌和上传，避免手写含 Secret 的 shell 命令。
 
-## GET /now
+## GET /api/now
 
 新鲜快照返回 HTTP 200，顶层增加 `status`、`updated_at` 和 `expires_at`：
 
@@ -70,7 +72,7 @@
 {
   "status": "online",
   "updated_at": "2026-09-08T08:00:01.000Z",
-  "expires_at": "2026-09-08T08:01:01.000Z",
+  "expires_at": "2026-09-08T08:03:01.000Z",
   "schema_version": 1,
   "collected_at": "2026-09-08T08:00:00.000Z",
   "active_app": "Visual Studio Code",
@@ -81,7 +83,7 @@
 }
 ```
 
-没有快照、记录损坏或服务端接收时间已过去至少 60 秒时，仍返回 HTTP 200：
+没有快照、记录损坏或已到服务端截止时间时，仍返回 HTTP 200：
 
 ```json
 {"status":"offline"}
@@ -91,11 +93,11 @@ KV 不可用与没有记录不同：存储访问失败返回 503。客户端应�
 
 `online` 只说明服务器最近收到数据；不表示设备此刻可连、用户在场或所有指标均授权。不同边缘读取有传播延迟，详见 [一致性边界](architecture.md#时间离线与一致性)。
 
-## GET /badge.svg
+## GET /api/badge.svg
 
 从同一新鲜度规则读取快照。在线并且 Music 正在播放且有曲目时显示歌曲与歌手，否则显示前台应用，或通用 `online`；离线显示 `offline`。长文本会截短，并按 XML 语境转义。存储错误返回 JSON 503，消费端应能显示图片加载失败的替代文本。
 
-## GET /health
+## GET /api/health
 
 返回 `{"ok":true,"service":"macflare"}`。不读取 KV，不检查 Secret，不检查 Mac 是否更新；适用于路由存活探测，不能用来证明整个链路健康。
 
@@ -114,7 +116,7 @@ KV 不可用与没有记录不同：存储访问失败返回 503。客户端应�
 | 405 | `method_not_allowed` | 已知路径使用错误方法；附带 `Allow` |
 | 413 | `payload_too_large` | 正文过大或 Content-Length 非法 |
 | 415 | `unsupported_media_type` | 内容类型错误，或使用非 identity Content-Encoding |
-| 503 | `service_unavailable` | 所需绑定/Secret 缺失或无效，或存储访问失败 |
+| 503 | `service_unavailable` | 所需绑定/Secret/TTL 配置缺失或无效，或存储访问失败 |
 
 鉴权先于请求正文解析；所需绑定配置检查先于接收鉴权。错误正文不暴露令牌、原始请求或平台内部详情。接口没有专门的每日配额控制；平台写入配额错误经通用 503 表达。
 

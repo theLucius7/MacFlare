@@ -4,12 +4,25 @@
   "private": true,
   "description": "Native macOS status, pushed to a privacy-conscious Cloudflare Worker.",
   "type": "module",
-  "engines": { "node": ">=22" },
-  "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
-    "test": "node --test",
-    "check": "node --check worker/index.js && wrangler deploy --dry-run"
+  "engines": {
+    "node": ">=22"
   },
-  "devDependencies": { "wrangler": "4.129.1" }
+  "scripts": {
+    "dev": "npm run docs:build && wrangler dev",
+    "deploy": "npm run docs:build && wrangler deploy",
+    "test": "node --test",
+    "check": "npm run docs:build && node scripts/check-site.mjs && node --check worker/index.js && wrangler deploy --dry-run",
+    "docs:dev": "vitepress dev docs --host 127.0.0.1",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs --host 127.0.0.1"
+  },
+  "devDependencies": {
+    "vitepress": "1.6.4",
+    "wrangler": "4.129.1"
+  },
+  "overrides": {
+    "vitepress": {
+      "vite": "6.4.3"
+    }
+  }
 }

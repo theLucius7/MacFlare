@@ -10,5 +10,7 @@ wrangler.local.*
 *.log
 .DS_Store
 coverage/
+docs/.vitepress/cache/
+docs/.vitepress/dist/
 work/
 *.token

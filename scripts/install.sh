@@ -8,17 +8,22 @@ PLIST="$HOME/Library/LaunchAgents/com.macflare.agent.plist"
 RUNTIME="$REPO_ROOT/agent/runtime.js"
 ENDPOINT=
 TOKEN_SOURCE=
+PROFILE=
 START=true
 
 usage() {
   cat <<'EOF'
-Usage: scripts/install.sh --endpoint HTTPS_ORIGIN [--token-file PATH] [--no-start]
-  --endpoint    Deployed Worker origin, without /update. Existing value is reused if omitted.
+Usage: scripts/install.sh [--endpoint HTTPS_ORIGIN] [--token-file PATH] [--profile eco|realtime] [--no-start]
+  --endpoint    Deployed Worker origin, without /api or /api/update. Existing value is reused if omitted.
   --token-file  Read the secret from a file. Otherwise reuse the installed token or prompt securely.
+  --profile     eco: every 120 seconds, Worker STATUS_TTL_SECONDS=180.
+                realtime: every 30 seconds, Worker STATUS_TTL_SECONDS=60.
   --no-start    Install files without loading the LaunchAgent (useful for inspection).
 
 Installs to ~/Library/Application Support/MacFlare. Existing privacy settings
-and custom blocked_apps are preserved. Updates run every 30 seconds while logged in.
+and custom blocked_apps are preserved. New installations default to eco; existing
+profiles are retained, and legacy configurations without profile retain realtime.
+Set the Worker's STATUS_TTL_SECONDS to match the selected profile before installing.
 EOF
 }
 
@@ -27,6 +32,13 @@ while [ "$#" -gt 0 ]; do
     --endpoint|--token-file)
       [ "$#" -ge 2 ] || { usage >&2; exit 2; }
       if [ "$1" = --endpoint ]; then ENDPOINT=$2; else TOKEN_SOURCE=$2; fi
+      shift 2 ;;
+    --profile)
+      [ "$#" -ge 2 ] || { usage >&2; exit 2; }
+      case "$2" in
+        eco|realtime) PROFILE=$2 ;;
+        *) echo '--profile must be eco or realtime.' >&2; exit 2 ;;
+      esac
       shift 2 ;;
     --no-start) START=false; shift ;;
     --help|-h) usage; exit 0 ;;
@@ -51,8 +63,8 @@ trap '/bin/rm -rf -- "$TASK_TEMP"; /bin/rmdir -- "$INSTALL_LOCK" 2>/dev/null || 
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-/usr/bin/osascript -l JavaScript "$RUNTIME" configure "$SUPPORT/config.json" "$ENDPOINT" >"$TASK_TEMP/config.json" 2>/dev/null || {
-  echo 'A valid --endpoint HTTPS origin and valid existing JSON configuration are required.' >&2; exit 1;
+/usr/bin/osascript -l JavaScript "$RUNTIME" configure "$SUPPORT/config.json" "$ENDPOINT" "$PROFILE" >"$TASK_TEMP/config.json" 2>/dev/null || {
+  echo 'A valid --endpoint HTTPS origin and valid JSON configuration (profile: eco or realtime) are required.' >&2; exit 1;
 }
 if [ -n "$TOKEN_SOURCE" ]; then
   [ -f "$TOKEN_SOURCE" ] || { echo 'Token file does not exist.' >&2; exit 1; }
@@ -72,8 +84,9 @@ fi
 /usr/bin/osascript -l JavaScript "$RUNTIME" validate "$TASK_TEMP/config.json" "$TASK_TEMP/token" >/dev/null 2>&1 || {
   echo 'Invalid endpoint or token; use a token of at least 32 Bearer-token characters.' >&2; exit 1;
 }
-/usr/bin/osascript -l JavaScript "$RUNTIME" plist "$SUPPORT/agent/macflare.sh" "$SUPPORT/config.json" >"$TASK_TEMP/agent.plist"
+/usr/bin/osascript -l JavaScript "$RUNTIME" plist "$SUPPORT/agent/macflare.sh" "$SUPPORT/config.json" "$TASK_TEMP/config.json" >"$TASK_TEMP/agent.plist"
 /usr/bin/plutil -lint "$TASK_TEMP/agent.plist" >/dev/null
+SCHEDULE_MESSAGE=$(/usr/bin/osascript -l JavaScript "$RUNTIME" schedule-message "$TASK_TEMP/config.json")
 
 # Stop an existing installation before replacing its files, including --no-start.
 if [ "$START" = true ] || [ -f "$PLIST" ]; then
@@ -95,8 +108,9 @@ if [ "$START" = true ]; then
     echo 'Files are installed, but launchd could not start the agent. Run from your logged-in desktop session.' >&2
     exit 1
   }
-  echo 'MacFlare installed and started; updates run every 30 seconds.'
+  echo 'MacFlare installed and started.'
 else
   echo 'MacFlare files installed; LaunchAgent was not loaded.'
 fi
+echo "$SCHEDULE_MESSAGE"
 echo 'Use agent/macflare.sh --print to inspect shared fields and grant Music Automation access if prompted.'
