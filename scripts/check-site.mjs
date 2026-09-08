@@ -4,7 +4,7 @@ import { join, posix, relative, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 
 const root = resolve('docs/.vitepress/dist');
-const api = new Set(['/api/now', '/api/update', '/api/badge.svg', '/api/health', '/now', '/update', '/badge.svg', '/health']);
+const api = new Set(['/api/now', '/api/music', '/api/apps/active', '/api/apps/running', '/api/device', '/api/update', '/api/badge.svg', '/api/health', '/now', '/update', '/badge.svg', '/health']);
 function walk(folder) {
   return readdirSync(folder, { withFileTypes: true }).flatMap((entry) => entry.isDirectory()
     ? walk(join(folder, entry.name)) : [join(folder, entry.name)]);

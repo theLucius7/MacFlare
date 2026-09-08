@@ -567,3 +567,206 @@ test("missing icon assets and HTML fallbacks are JSON 404; asset failures are ge
     assert.deepEqual(await response.json(), { error: "service_unavailable" });
   }
 });
+
+const SLICES = ["/api/music", "/api/apps/active", "/api/apps/running", "/api/device"];
+
+function sliceSetup(data = sample()) {
+  const context = setup();
+  context.values.set("now", JSON.stringify({ received_at: NOW, expires_at: NOW + 60_000, data }));
+  return context;
+}
+
+function sliceEnvelope() {
+  return {
+    status: "online", updated_at: new Date(NOW).toISOString(),
+    expires_at: new Date(NOW + 60_000).toISOString(), collected_at: sample().collected_at,
+  };
+}
+
+function plainApp(name) {
+  return { name, icon_url: null, icon_api_url: null };
+}
+
+test("music slice enriches only the stored song and preserves the shared status deadline", async () => {
+  const { env, calls } = sliceSetup();
+  const lookups = [];
+  const artwork = {
+    artworkUrl: "https://is1-ssl.mzstatic.com/image/thumb/example/100x100bb.jpg",
+    trackUrl: "https://music.apple.com/us/album/example/123?i=456",
+  };
+  const response = await handleRequest(request("/api/music?track=private&artist=other"), env, NOW, {
+    now: () => NOW,
+    async lookupArtwork(music, options) {
+      lookups.push({ music, options });
+      return artwork;
+    },
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    ...sliceEnvelope(), music: { ...sample().music, artwork_url: artwork.artworkUrl, track_url: artwork.trackUrl },
+  });
+  assert.deepEqual(lookups, [{ music: sample().music, options: { origin: "https://example.test" } }]);
+  assert.deepEqual(calls, [{ method: "get", key: "now", options: { type: "text", cacheTtl: 30 } }]);
+  for (const header of ["cache-control", "cdn-cache-control", "cloudflare-cdn-cache-control"]) {
+    assert.match(response.headers.get(header), /no-store/u);
+  }
+  assert.equal(response.headers.get("access-control-allow-origin"), "*");
+});
+
+test("music slices retain metadata when artwork is absent or fails, and skip incomplete or inactive songs", async () => {
+  for (const music of [
+    { state: "playing", track: "A song", artist: "An artist" },
+    { state: "paused", track: "A song", artist: "An artist" },
+    { state: "stopped", track: "A song", artist: "An artist" },
+    { state: "unavailable", track: null, artist: null },
+    { state: "playing", track: null, artist: "An artist" },
+    { state: "playing", track: "A song", artist: null },
+    { state: "paused", track: "   ", artist: "An artist" },
+  ]) {
+    for (const fails of [false, true]) {
+      const { env, calls } = sliceSetup({ ...sample(), music });
+      let lookups = 0;
+      const response = await handleRequest(request("/api/music"), env, NOW, {
+        now: () => NOW,
+        async lookupArtwork() {
+          lookups += 1;
+          if (fails) throw new Error("Private Apple lookup error");
+          return null;
+        },
+      });
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), {
+        ...sliceEnvelope(), music: { ...music, artwork_url: null, track_url: null },
+      });
+      assert.equal(lookups, ["playing", "paused"].includes(music.state) && music.track?.trim() && music.artist?.trim() ? 1 : 0);
+      assert.equal(calls.length, 1);
+    }
+  }
+});
+
+test("a slow artwork success or failure cannot return status at or beyond its original expiry", async () => {
+  for (const elapsed of [59_999, 60_000, 60_001]) {
+    for (const fails of [false, true]) {
+      const { env, calls } = sliceSetup();
+      let time = NOW;
+      const response = await handleRequest(request("/api/music"), env, NOW, {
+        now: () => time,
+        async lookupArtwork() {
+          time += elapsed;
+          if (fails) throw new Error("Artwork service unavailable");
+          return { artworkUrl: "https://is1-ssl.mzstatic.com/example.jpg", trackUrl: "https://music.apple.com/us/song/123" };
+        },
+      });
+      assert.equal(response.status, 200);
+      const data = await response.json();
+      if (elapsed < 60_000) {
+        assert.equal(data.status, "online");
+        assert.equal(data.expires_at, new Date(NOW + 60_000).toISOString());
+      } else assert.deepEqual(data, { status: "offline" });
+      assert.equal(calls.length, 1);
+    }
+  }
+});
+
+test("active app slices match committed icon aliases and never construct paths from unknown names", async () => {
+  for (const [name, id] of [
+    ["Visual Studio Code", "visual-studio-code"], ["Code", "visual-studio-code"],
+    ["访达", "finder"], ["  music  ", "music"], ["System", null],
+    ["../private", null], ["https://example.test/icon.png", null], ["__proto__", null], [null, null],
+  ]) {
+    const { env, calls } = sliceSetup({ ...sample(), active_app: name });
+    const response = await handleRequest(request("/api/apps/active?app=Finder"), env, NOW, {
+      now: () => NOW,
+      lookupArtwork() { assert.fail("Application slices must not query artwork."); },
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      ...sliceEnvelope(), active_app: name === null ? null : {
+        name, icon_url: id ? `/app-icons/${id}.png` : null, icon_api_url: id ? `/api/icons/${id}.png` : null,
+      },
+    });
+    assert.equal(calls.length, 1);
+  }
+});
+
+test("running app slices distinguish disabled collection from an empty report and enrich each stored name", async () => {
+  for (const [running, expected] of [
+    [undefined, null], [[], []],
+    [["Finder", "Unknown App", "System"], [
+      { name: "Finder", icon_url: "/app-icons/finder.png", icon_api_url: "/api/icons/finder.png" },
+      plainApp("Unknown App"), plainApp("System"),
+    ]],
+  ]) {
+    const data = sample();
+    if (running === undefined) delete data.running_apps;
+    else data.running_apps = running;
+    const { env, calls } = sliceSetup(data);
+    const response = await handleRequest(request("/api/apps/running"), env, NOW, {
+      now: () => NOW,
+      lookupArtwork() { assert.fail("Application slices must not query artwork."); },
+    });
+    assert.deepEqual(await response.json(), { ...sliceEnvelope(), running_apps: expected });
+    assert.equal(calls.length, 1);
+  }
+});
+
+test("device slices return only the battery and system aggregate, including privacy-disabled values", async () => {
+  for (const device of [
+    { battery: sample().battery, system: sample().system },
+    { battery: { percent: null, charging: null, power_source: "unknown" }, system: { load_1m: null, load_5m: null, load_15m: null } },
+  ]) {
+    const { env, calls } = sliceSetup({ ...sample(), ...device });
+    const response = await handleRequest(request("/api/device"), env, NOW, {
+      now: () => NOW,
+      lookupArtwork() { assert.fail("Device slices must not query artwork."); },
+    });
+    assert.deepEqual(await response.json(), { ...sliceEnvelope(), device });
+    assert.equal(calls.length, 1);
+  }
+});
+
+test("all slices use one status read and return exact offline without enriching absent, expired, or corrupt data", async () => {
+  for (const stored of [null, "invalid JSON", JSON.stringify({ received_at: NOW - 60_000, data: sample() })]) {
+    for (const path of SLICES) {
+      const { env, values, calls } = setup();
+      if (stored !== null) values.set("now", stored);
+      const response = await handleRequest(request(path), env, NOW, {
+        now: () => NOW,
+        lookupArtwork() { assert.fail("Offline slices must not query artwork."); },
+      });
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), { status: "offline" });
+      assert.equal(calls.length, 1);
+    }
+  }
+});
+
+test("slice routes support canonical GET and OPTIONS only and retain generic service errors", async () => {
+  for (const path of SLICES) {
+    const { env, calls } = setup();
+    const options = await handleRequest(request(path, sample(), { method: "OPTIONS" }), env, NOW);
+    assert.equal(options.status, 204);
+    assert.equal(options.headers.get("access-control-allow-origin"), "*");
+    assert.equal(await options.text(), "");
+    for (const method of ["HEAD", "POST", "PUT"]) {
+      const response = await handleRequest(request(path, sample(), { method }), env, NOW);
+      assert.equal(response.status, 405);
+      assert.equal(response.headers.get("allow"), "GET, OPTIONS");
+    }
+    for (const route of [path.slice(4), `${path}/`]) {
+      for (const method of ["GET", "OPTIONS"]) {
+        const response = await handleRequest(request(route, sample(), { method }), env, NOW);
+        assert.equal(response.status, 404);
+        assert.deepEqual(await response.json(), { error: "not_found" });
+      }
+    }
+    assert.equal(calls.length, 0);
+    env.STATUS_KV.get = async () => { throw new Error(`Private vendor detail ${TOKEN}`); };
+    for (const unavailable of [{}, env, { ...env, STATUS_TTL_SECONDS: "bad" }]) {
+      const response = await handleRequest(request(path), unavailable, NOW);
+      assert.equal(response.status, 503);
+      assert.deepEqual(await response.json(), { error: "service_unavailable" });
+      assert.match(response.headers.get("cache-control"), /no-store/u);
+    }
+  }
+});

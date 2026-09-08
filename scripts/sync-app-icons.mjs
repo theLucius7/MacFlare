@@ -1,5 +1,5 @@
 import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
-import { validateApps, selectAppIcon, cachedAppIcon } from './app-icon-sync.mjs';
+import { validateApps, selectAppIcon, cachedAppIcon, hasNativeIcon } from './app-icon-sync.mjs';
 import { findAppIcon } from '../docs/.vitepress/theme/app-icon-catalog.js';
 
 async function main() {
@@ -10,13 +10,16 @@ async function main() {
     if (args[index] === '--key-file' && args[index + 1]) keyFile = args[++index];
     else if (args[index] === '--force') force = true;
     else if (args[index] === '--help') {
-      console.log('Usage: npm run icons:sync -- --key-file /path/to/key [--force]\nAlternatively set MACOSICONS_API_KEY. Cached matches are reused until their final 2 days.');
+      console.log('Usage: npm run icons:sync -- --key-file /path/to/key [--force]\nAlternatively set MACOSICONS_API_KEY. Native icons are always skipped. Provider matches are reused until their final 2 days unless --force is set.');
       return;
     } else throw new Error('Unknown option. Run icons:sync -- --help.');
   }
   const apiKey = (keyFile ? await readFile(keyFile, 'utf8') : process.env.MACOSICONS_API_KEY || '').trim();
   if (!apiKey || /\s/u.test(apiKey)) throw new Error('Provide a valid macOSicons API key via --key-file or MACOSICONS_API_KEY.');
   const apps = validateApps(JSON.parse(await readFile(new URL('../config/app-icons.json', import.meta.url), 'utf8')));
+  let native = { version: 1, icons: [] };
+  try { native = JSON.parse(await readFile(new URL('../docs/public/app-icons/index.json', import.meta.url), 'utf8')); }
+  catch (error) { if (error.code !== 'ENOENT') throw new Error('Cannot read the native app icon catalog.'); }
   const destination = new URL('../docs/.vitepress/theme/app-icons.json', import.meta.url);
   const temporary = new URL('./app-icons.json.tmp', destination);
   let old = { version: 1, icons: [] };
@@ -33,6 +36,10 @@ async function main() {
   }
   let searches = 0;
   for (const app of apps) {
+    if (hasNativeIcon(app, native)) {
+      console.log(`Native: ${app.app}`);
+      continue;
+    }
     if (!force && cachedAppIcon(catalog, app, Date.now())) {
       console.log(`Cached: ${app.app}`);
       continue;

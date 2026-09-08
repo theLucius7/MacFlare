@@ -7,16 +7,22 @@
 | 方法 | 路径 | 鉴权 | 功能 |
 | --- | --- | --- | --- |
 | `POST` | `/api/update` | `Authorization: Bearer <INGEST_TOKEN>` | 验证并覆盖当前快照 |
-| `GET` | `/api/now` | 无 | 读取在线快照或离线状态 |
+| `GET` | `/api/now` | 无 | 一次读取完整原始快照，组合页面优先使用 |
+| `GET` | `/api/music` | 无 | 音乐状态、歌名、歌手及可空的 Apple 封面与歌曲链接 |
+| `GET` | `/api/apps/active` | 无 | 前台应用名称及可空的原生图标地址 |
+| `GET` | `/api/apps/running` | 无 | 运行应用及原生图标地址，未采集时为 `null` |
+| `GET` | `/api/device` | 无 | 电池与系统负载 |
 | `GET` | `/api/badge.svg` | 无 | 生成状态 SVG 徽章 |
 | `GET` | `/api/health` | 无 | 检查 Worker 能否响应，不读取 KV |
 | `GET`、`HEAD` | `/api/icons` | 无 | 读取部署内的原生图标清单 |
 | `GET`、`HEAD` | `/api/icons/<id>.png` | 无 | 返回清单内的真实 PNG |
 | `OPTIONS` | 以上已知路径 | 无 | CORS 预检，返回 204 |
 
-没有尾斜线别名；`/api/now/` 是未知路径。只有图标接口支持 `HEAD`，原有状态、写入、徽章与健康接口仍返回 405。查询参数不改变响应。JSON 使用 `application/json; charset=utf-8`，SVG 使用 `image/svg+xml; charset=utf-8`，图标使用 `image/png`。
+没有尾斜线别名；`/api/now/` 是未知路径。只有图标接口支持 `HEAD`，包括四个分类接口在内的状态、写入、徽章与健康接口均返回 405。查询参数不改变响应。JSON 使用 `application/json; charset=utf-8`，SVG 使用 `image/svg+xml; charset=utf-8`，图标使用 `image/png`。
 
-旧 `/update`、`/now`、`/badge.svg`、`/health` 保留兼容且不重定向，新集成使用 `/api/*`。根路径 `/` 为状态主页，文档 API 参考页面位于 `/api`。
+旧 `/update`、`/now`、`/badge.svg`、`/health` 保留兼容且不重定向，新集成使用 `/api/*`。四个新增分类接口仅提供表中的 `/api/*` 路径，没有 `/music`、`/apps/active` 等根路径别名。根路径 `/` 为状态主页，文档 API 参考页面位于 `/api`。
+
+完整页面需要多类状态时，**每轮只请求一次 `/api/now`**。四个分类接口供独立小组件按需选用，各自一次 GET 都读取一次 KV；并行请求不会合并读取，也不能保证读到同一个快照。分类接口只整理同一设备快照，不写 KV。[调用示例](integrations.md#按需选择接口) · [读取额度](quotas.md#读取也有额度)
 
 ## POST /api/update
 
@@ -94,6 +100,86 @@
 KV 不可用与没有记录不同：存储访问失败返回 503。客户端应区分“离线”和“读取失败”，并处理 `null`、缺失的可选字段以及未来协议新增字段。
 
 `online` 只说明服务器最近收到数据；不表示设备此刻可连、用户在场或所有指标均授权。不同边缘读取有传播延迟，详见 [一致性边界](architecture.md#时间离线与一致性)。
+
+## 分类状态接口
+
+以下四个接口在线时共有 `status: "online"`、`updated_at`、`expires_at`、`collected_at`，时间含义与 `/api/now` 相同。没有新鲜快照时，HTTP 200 正文精确为 `{"status":"offline"}`，不附带对应数据字段。KV 访问失败返回 503；不要把失败当成离线。
+
+全部公开、无需 Bearer，支持 GET 和 OPTIONS 204，HEAD 返回 405；状态响应使用 `no-store` 与 CORS `*`。每次 GET 只读取一次 KV，不写入或刷新快照。`/api/now` 的原有字段、类型与缺省行为完全保留，下面的图标和封面字段只出现在对应分类接口中。
+
+### GET /api/music
+
+```json
+{
+  "status": "online",
+  "updated_at": "2026-09-08T08:00:01.000Z",
+  "expires_at": "2026-09-08T08:03:01.000Z",
+  "collected_at": "2026-09-08T08:00:00.000Z",
+  "music": {
+    "state": "playing",
+    "track": "Example Song",
+    "artist": "Example Artist",
+    "artwork_url": null,
+    "track_url": null
+  }
+}
+```
+
+`state`、`track`、`artist` 保留采集值与原有空值语义。在线快照新鲜、`playing` 或 `paused` 且歌名歌手齐全时，Worker 使用公开曲名向 Apple iTunes Search API 查询，参数固定为 `country=us`、`entity=song`、`limit=5`。标题和艺人经过严格规范化匹配后，才返回经检查的 HTTPS `artwork_url` 与 `track_url`；没有可信匹配、搜索失败或 URL 不安全时为 `null`，不会清空已有曲名。美国商店没有结果时不盲选其他歌曲。[Apple 查询参数](https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/Searching.html)
+
+服务器只缓存公开目录的匹配结果，不缓存设备状态或写入 KV。成功结果最多复用 1 小时，未匹配或失败结果最多复用 5 分钟；边缘节点可提前淘汰，不能保证不同节点命中同一缓存。Apple 查询阶段限时 4.5 秒，接口总耗时还包括 KV 与缓存访问；返回前会再次检查快照截止时间。缓存有效不表示 Mac 在线，响应仍以当前快照的新鲜度为准。[隐私与缓存](privacy.md#音乐-api-封面查询)
+
+### GET /api/apps/active
+
+```json
+{
+  "status": "online",
+  "updated_at": "2026-09-08T08:00:01.000Z",
+  "expires_at": "2026-09-08T08:03:01.000Z",
+  "collected_at": "2026-09-08T08:00:00.000Z",
+  "active_app": {
+    "name": "Visual Studio Code",
+    "icon_url": "/app-icons/visual-studio-code.png",
+    "icon_api_url": "/api/icons/visual-studio-code.png"
+  }
+}
+```
+
+前台应用不可用或未采集时 `active_app` 为 `null`。否则 `name` 是公开应用名；已知原生图标的 `icon_url` 为静态路径，`icon_api_url` 为图片 API 路径，两者都相对于部署根域名。未知应用或屏蔽后的 `System` 保留名称，两个图片字段均为 `null`。静态路径更适合网页 `<img>`，不执行 Worker。
+
+### GET /api/apps/running
+
+```json
+{
+  "status": "online",
+  "updated_at": "2026-09-08T08:00:01.000Z",
+  "expires_at": "2026-09-08T08:03:01.000Z",
+  "collected_at": "2026-09-08T08:00:00.000Z",
+  "running_apps": [
+    {"name":"Finder","icon_url":"/app-icons/finder.png","icon_api_url":"/api/icons/finder.png"},
+    {"name":"Example App","icon_url":null,"icon_api_url":null}
+  ]
+}
+```
+
+每项结构与前台应用对象相同。原快照未包含 `running_apps` 时，这里明确返回 `null`；已采集但没有应用时返回 `[]`。列表最多 64 项，敏感应用已在本机过滤；分类接口不会重新扫描设备或向第三方搜索应用名。
+
+### GET /api/device
+
+```json
+{
+  "status": "online",
+  "updated_at": "2026-09-08T08:00:01.000Z",
+  "expires_at": "2026-09-08T08:03:01.000Z",
+  "collected_at": "2026-09-08T08:00:00.000Z",
+  "device": {
+    "battery": {"percent":78,"charging":false,"power_source":"battery"},
+    "system": {"load_1m":1.5,"load_5m":1.8,"load_15m":1.6}
+  }
+}
+```
+
+`device.battery` 与 `device.system` 使用 `/api/now` 相同结构，包括不可用时的 `null`；负载平均值不是 CPU 使用率。读取电池无需同时查询音乐或应用接口。
 
 ## GET /api/badge.svg
 

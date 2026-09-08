@@ -2,6 +2,35 @@
 
 每个部署公开自己的当前快照。下面的 `YOUR_HOST` 应替换为你的域名，不包含 `https://`、路径或结尾斜杠。
 
+## 按需选择接口
+
+| 需要的数据 | 调用 | 主要字段 | 每次 GET 的 KV 读取 |
+| --- | --- | --- | --- |
+| 完整状态，推荐组合页面使用 | `/api/now` | 原始 `music`、应用名称、`battery`、`system` | 1 |
+| 音乐小组件 | `/api/music` | `music.track`、`artist`、`artwork_url`、`track_url` | 1 |
+| 前台应用 | `/api/apps/active` | `active_app.name`、`icon_url`、`icon_api_url` | 1 |
+| 运行应用列表 | `/api/apps/running` | `running_apps[]`，每项含名称与图标地址 | 1 |
+| 电池与负载 | `/api/device` | `device.battery`、`device.system` | 1 |
+| 固定图标清单／PNG | `/api/icons`、`/api/icons/<id>.png` | 有限静态图标资源 | 0 |
+
+下面是相互独立的调用示例，按需要选择。需要多类数据时，每轮只调用一次 `/api/now`；不要每 120 秒并行轮询所有分类接口，它们不会合并 KV 读取。首页仍只轮询 `/api/now`，歌曲封面由浏览器直接查询 Apple。
+
+```sh
+# 音乐：歌名、歌手，以及可能为 null 的封面／歌曲链接。
+curl -sS https://YOUR_HOST/api/music
+
+# 前台应用：未知图标时仍保留应用名。
+curl -sS https://YOUR_HOST/api/apps/active
+
+# 运行应用：null 表示未采集，[] 表示已采集但没有条目。
+curl -sS https://YOUR_HOST/api/apps/running
+
+# 电池：读取 device.battery.percent、charging、power_source。
+curl -sS https://YOUR_HOST/api/device
+```
+
+四个分类接口只接受规范 `/api/*` 路径，支持 GET／OPTIONS，不支持 HEAD；离线时统一返回 `{"status":"offline"}`，没有对应数据对象。完整结构见 [API 参考](api.md#分类状态接口)。
+
 ## 读取 JSON
 
 ```sh
@@ -42,6 +71,7 @@ curl -sS https://YOUR_HOST/api/now
       render();
     } catch {
       state = null;
+      render();
       output.textContent = '暂时无法读取状态';
     } finally { busy = false; }
   }
@@ -52,6 +82,41 @@ curl -sS https://YOUR_HOST/api/now
 ```
 
 每秒执行的是本地截止时间检查，网络请求仍受 120 秒间隔限制。请使用 `textContent`，不要用 `innerHTML` 拼入应用名或歌曲名。大量访问者会累加读取次数，详见 [免费额度](quotas.md)。
+
+## 音乐图片与应用图标
+
+`/api/music` 返回 JSON，不能直接写成 `<img src="…/api/music">`。音乐小组件可将上方轮询代码的请求路径改为 `/api/music`，增加以下图片元素，并用下面的 `render` 替换原展示函数；保留原有 120 秒请求间隔、错误处理与本地过期检查。
+
+```html
+<img id="music-cover" alt="当前曲目封面" width="100" height="100" hidden>
+```
+
+```js
+function render() {
+  const fresh = state?.status === 'online' && Date.now() < Date.parse(state.expires_at);
+  const music = fresh ? state.music : null;
+  output.textContent = music
+    ? `${music.track ?? '暂无曲目'} · ${music.artist ?? '未知歌手'} · ${music.state}`
+    : 'Mac 当前离线';
+  const cover = document.querySelector('#music-cover');
+  const url = music?.artwork_url ?? null;
+  cover.hidden = !url;
+  if (url && cover.getAttribute('src') !== url) cover.src = url;
+  if (!url) cover.removeAttribute('src');
+}
+```
+
+使用非空 `music.track_url` 可另加歌曲链接。封面匹配失败时保留文字；不要自行挑选其他歌曲，也不要用封面缓存延长设备状态有效期。
+
+前台应用的 `active_app.icon_url` 与运行列表每项的 `icon_url` 是相对部署根域名的静态图片路径；跨站嵌入时用 `new URL(icon_url, 'https://YOUR_HOST').href` 补全。非空时可作为图片地址，例如：
+
+```html
+<img src="https://YOUR_HOST/app-icons/visual-studio-code.png"
+     alt="Visual Studio Code" width="48" height="48"
+     title="应用图标版权归原作者">
+```
+
+`active_app` 为 `null` 时不渲染应用，`running_apps: null` 显示未采集、`[]` 显示无条目；图标地址为 `null` 时保留名称并显示占位。`icon_api_url` 指向同一 PNG 的统一 API 地址，适用于需要该入口的集成；静态 `icon_url` 不执行 Worker。
 
 ## GitHub README 徽章
 

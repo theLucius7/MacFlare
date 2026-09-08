@@ -6,7 +6,7 @@ const normalized = value => typeof value === 'string' ? value.normalize('NFKC').
 const text = value => typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/gu, '').trim().slice(0, 300) : '';
 
 export function validateApps(config) {
-  if (config?.version !== 1 || !Array.isArray(config.apps) || config.apps.length > 32) throw new Error('Expected version 1 and at most 32 configured apps.');
+  if (config?.version !== 1 || !Array.isArray(config.apps) || config.apps.length > 128) throw new Error('Expected version 1 and at most 128 configured apps.');
   const names = new Set();
   for (const app of config.apps) {
     if (![app?.app, app?.query].every(value => typeof value === 'string' && value.trim() && value.length <= 100)
@@ -18,6 +18,10 @@ export function validateApps(config) {
     }
   }
   return config.apps;
+}
+
+export function hasNativeIcon(app, catalog) {
+  return findAppIcon(app.app, catalog)?.source === 'installed-app';
 }
 
 export function selectAppIcon(body, app, now) {

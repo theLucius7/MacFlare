@@ -17,7 +17,8 @@ import sys
 import tempfile
 
 REPO = Path(__file__).resolve().parents[1]
-APP_ROOTS = (Path('/Applications'), Path('/System/Applications'), Path('/System/Applications/Utilities'))
+APP_ROOTS = (Path('/Applications'), Path.home() / 'Applications',
+             Path('/System/Applications'), Path('/System/Applications/Utilities'))
 ID_PATTERN = re.compile(r'[a-z0-9]+(?:-[a-z0-9]+)*\Z')
 BUNDLE_PATTERN = re.compile(r'[A-Za-z0-9]+(?:[A-Za-z0-9.-]*[A-Za-z0-9])?\Z')
 CONTROL_PATTERN = re.compile(r'[\x00-\x1f\x7f]')
@@ -42,8 +43,8 @@ def text(value):
 def read_config(path):
     data = json.loads(path.read_text(encoding='utf-8'))
     if not isinstance(data, dict) or data.get('version') != 1 or not isinstance(data.get('apps'), list) \
-            or not 1 <= len(data['apps']) <= 32:
-        raise ValueError('Configuration must contain version 1 and 1 to 32 apps.')
+            or not 1 <= len(data['apps']) <= 128:
+        raise ValueError('Configuration must contain version 1 and 1 to 128 apps.')
     selected, identifiers = [], set()
     for item in data['apps']:
         if not isinstance(item, dict) or not text(item.get('app')) or not text(item.get('query')):

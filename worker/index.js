@@ -1,8 +1,13 @@
+import installedIcons from "../docs/public/app-icons/index.json" with { type: "json" };
+import { findAppIcon } from "../docs/.vitepress/theme/app-icon-catalog.js";
+import { lookupMusicArtwork } from "./music-artwork.js";
+
 const LEGACY_TTL_SECONDS = 60;
 const MAX_TTL_SECONDS = 3600;
 const MAX_BODY_BYTES = 16 * 1024;
 const MAX_CLOCK_SKEW_MS = 120_000;
 const STATUS_KEY = "now";
+const SLICE_ROUTES = new Set(["/api/music", "/api/apps/active", "/api/apps/running", "/api/device"]);
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -304,9 +309,54 @@ async function iconAsset(request, env, pathname) {
   }
 }
 
-export async function handleRequest(request, env, now = Date.now()) {
+function appWithIcon(name) {
+  if (name === null) return null;
+  const icon = findAppIcon(name, installedIcons);
+  return {
+    name,
+    icon_url: icon?.source === "installed-app" ? icon.assetUrl : null,
+    icon_api_url: icon?.source === "installed-app" ? icon.imageUrl : null,
+  };
+}
+
+async function statusSlice(pathname, status, origin, lookupArtwork) {
+  const envelope = {
+    status: "online",
+    updated_at: status.updated_at,
+    expires_at: status.expires_at,
+    collected_at: status.collected_at,
+  };
+  if (pathname === "/api/music") {
+    let artwork = null;
+    if (["playing", "paused"].includes(status.music.state)
+      && status.music.track?.trim() && status.music.artist?.trim()) {
+      try {
+        artwork = await lookupArtwork(status.music, { origin });
+      } catch {
+        // Artwork availability never removes the current song's metadata.
+      }
+    }
+    return { ...envelope, music: {
+      ...status.music,
+      artwork_url: artwork?.artworkUrl ?? null,
+      track_url: artwork?.trackUrl ?? null,
+    } };
+  }
+  if (pathname === "/api/apps/active") {
+    return { ...envelope, active_app: appWithIcon(status.active_app) };
+  }
+  if (pathname === "/api/apps/running") {
+    return { ...envelope, running_apps: status.running_apps?.map(appWithIcon) ?? null };
+  }
+  return { ...envelope, device: { battery: status.battery, system: status.system } };
+}
+
+export async function handleRequest(request, env, now = Date.now(), dependencies = {}) {
   try {
-    const pathname = new URL(request.url).pathname;
+    const clock = dependencies.now ?? Date.now;
+    const startedAt = clock();
+    const url = new URL(request.url);
+    const pathname = url.pathname;
     if (pathname === "/api/icons" || pathname.startsWith("/api/icons/")) {
       return await iconAsset(request, env, pathname);
     }
@@ -314,7 +364,8 @@ export async function handleRequest(request, env, now = Date.now()) {
     // so installed agents can keep posting their authenticated request bodies.
     const path = pathname.startsWith("/api/") ? pathname.slice(4) : pathname;
     const method = path === "/update" ? "POST" : "GET";
-    if (!["/update", "/now", "/badge.svg", "/health"].includes(path)) {
+    const slice = SLICE_ROUTES.has(pathname);
+    if (!slice && !["/update", "/now", "/badge.svg", "/health"].includes(path)) {
       return json({ error: "not_found" }, 404);
     }
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
@@ -338,6 +389,14 @@ export async function handleRequest(request, env, now = Date.now()) {
       return json({ ok: true, ...timestamps(now, expiresAt) });
     }
     const status = await currentStatus(env, now, ttlSeconds);
+    if (slice) {
+      if (status.status === "offline") return json(status);
+      const result = await statusSlice(pathname, status, url.origin, dependencies.lookupArtwork ?? lookupMusicArtwork);
+      // Keep the injected request timestamp while accounting for time spent in
+      // KV and artwork lookup; slow enrichment cannot expose expired status.
+      const completedAt = now + Math.max(0, clock() - startedAt);
+      return json(completedAt >= Date.parse(status.expires_at) ? { status: "offline" } : result);
+    }
     return path === "/badge.svg" ? badge(status) : json(status);
   } catch (error) {
     if (error instanceof ClientError) return json({ error: error.code }, error.status);

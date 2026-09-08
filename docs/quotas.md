@@ -52,7 +52,9 @@ Worker 接受 60–3600 秒整数 TTL；本机提供上述两个受支持的 pro
 
 ## 读取也有额度
 
-`GET /api/now` 和 `GET /api/badge.svg` 每次进入 Worker 都读取 KV。不要因 KV 内部有缓存就假定不计费；HTTP 响应仍使用 `no-store`，避免缓存超过状态截止时间。[KV 读取规则](https://developers.cloudflare.com/kv/api/read-key-value-pairs/)
+`GET /api/now`、`/api/music`、`/api/apps/active`、`/api/apps/running`、`/api/device` 与 `/api/badge.svg` 每次都读取一次 KV，不写入 KV。不要因 KV 内部有缓存就假定不计费；HTTP 响应仍使用 `no-store`，避免缓存超过状态截止时间。[KV 读取规则](https://developers.cloudflare.com/kv/api/read-key-value-pairs/)
+
+需要多类数据时，每轮只读一次 `/api/now`。如果每 120 秒分别调用四个分类接口，单页约读 2,880 次/日；调用一次完整接口约读 720 次/日。分类接口只是方便独立小组件，不会共享一次 KV 操作；并行调用还可能读到不同的快照。
 
 首页每 120 秒读取一次状态，页面隐藏时暂停，切回页面不会突破同一页面的刷新间隔；其他文档页面不自动加载实时状态。一个持续打开的主页约读 720 次/日，多个访问者会累加，重新打开页面另计。静态文档、样式和本地搜索不访问 KV。
 
@@ -66,6 +68,12 @@ Worker 接受 60–3600 秒整数 TTL；本机提供上述两个受支持的 pro
 
 失败重试间隔至少 5 分钟，页面隐藏或设备快照失效时不重试。
 
+### 音乐 API 的服务端匹配
+
+`/api/music` 自身仍每次读取一次 KV；只有在线且具备歌名、歌手的播放／暂停状态需要匹配 Apple 目录。搜索结果在服务端内存与所在边缘节点的 Cache API 中复用：成功 1 小时，未匹配或失败 5 分钟，内存最多 50 条，同一运行实例的同曲目并发查询会合并。Apple 查询阶段限时 4.5 秒，接口总耗时还包含 KV 与缓存访问；查询失败返回空 URL，不消耗 KV 写入。
+
+缓存的是公共目录匹配结果，API 状态响应仍 `no-store`。不同边缘节点、缓存淘汰和新的歌曲会再次查询 Apple，不能承诺全局命中率或固定的搜索次数。首页不额外轮询 `/api/music`，继续使用现有浏览器封面流程。避免反复刷新来强制补封面。[音乐 API 隐私](privacy.md#音乐-api-封面查询)
+
 ## 应用图标的请求与额度
 
 原生图标由 `npm run icons:export` 在开发用 Mac 上一次导出，不调用 macOSicons，不消耗其额度；普通构建直接使用仓库中的 PNG 与清单。
@@ -78,9 +86,9 @@ Worker 接受 60–3600 秒整数 TTL；本机提供上述两个受支持的 pro
 
 首页使用静态图片路径；只需嵌入图标时也推荐该路径。API 成功响应允许缓存 1 小时并支持 ETag 条件请求，但实际进入 API 的请求仍计 Worker 请求，不能视为无限免费接口。[Cloudflare 静态资源计费](https://developers.cloudflare.com/workers/static-assets/billing-and-limitations/)
 
-可选 macOSicons 搜索只在维护者运行 `npm run icons:sync` 时发生。同步复用距离到期仍超过 2 天的记录；每个未复用应用最多查询一次且不自动重试。记录最多有效 30 天，过期后需重新同步并部署。默认配置 12 个应用，首次完整查询最多 12 次；`--force` 会跳过复用并额外消耗额度。
+可选 macOSicons 搜索只在维护者运行 `npm run icons:sync` 时发生。已有原生图标的配置项直接跳过，`--force` 也不会查询它们，因此当前仓库原生图标集不消耗搜索额度。只对缺少原生图标的配置项匹配；剩余有效期超过 2 天的补充记录会复用，每个需要查询的应用最多搜索一次且不自动重试。补充记录最多有效 30 天，过期后需重新同步并部署；`--force` 仅对这些补充项跳过复用，额外消耗额度。
 
-macOSicons 的 `GET /api/v1/usage` 只读返回当前 Key 的月度 `used`、`limit`、`remaining` 和 UTC 重置时间，不消耗查询额度；以自己的返回值为准。例如搜索限额为 50 次/月时，一次 12 应用同步在该限额内，反复强制同步仍可能耗尽额度。本项目不会自动升级套餐。[官方用量接口](https://macosicons.com/developers.md) · [图标配置与同步](app-icons.md)
+macOSicons 的 `GET /api/v1/usage` 只读返回当前 Key 的月度 `used`、`limit`、`remaining` 和 UTC 重置时间，不消耗查询额度；以自己的返回值为准。例如搜索限额为 50 次/月时，只新增 3 个缺少原生图标的配置项，一次同步最多使用 3 次；反复强制同步仍可能耗尽额度。本项目不会自动升级套餐。[官方用量接口](https://macosicons.com/developers.md) · [图标配置与同步](app-icons.md)
 
 ## 如果还需要更低消耗
 
