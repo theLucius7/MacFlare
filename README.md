@@ -18,6 +18,7 @@ MacFlare 为个人博客、Now Page 和 GitHub README 提供 Apple Music 歌曲�
 | Apple Music | 播放／暂停／停止、歌名和歌手；未授权时独立降级 |
 | 首页歌曲封面 | 访客浏览器查询 Apple，仅显示可信匹配的封面并链接歌曲页面；无匹配时保留文字状态 |
 | 应用状态 | 前台应用和 GUI 应用列表；不采集窗口标题、路径或进程参数 |
+| 应用图标 | 可选 macOSicons 固定映射，部署前同步；保留作者与来源，未知或过期时使用占位 |
 | 硬件状态 | 电量、充电、供电来源和系统负载平均值 |
 | 隐私控制 | 敏感应用屏蔽、追加名单、各采集项独立开关 |
 | 原生后台 | 用户登录后运行的 LaunchAgent，可安装、更新和卸载 |
@@ -25,6 +26,8 @@ MacFlare 为个人博客、Now Page 和 GitHub README 提供 Apple Music 歌曲�
 | 同站点文档 | 首页展示实时快照，文档静态托管，API 使用 `/api/*` |
 
 封面查询仅使用公开歌名和歌手，直接请求 Apple 搜索服务与图片 CDN；不增加 Cloudflare KV 操作，也不改变 `/api/now` 字段。美国商店无可信匹配时显示占位，收到停止状态或快照过期后撤掉封面。[封面隐私与缓存](docs/privacy.md#首页歌曲封面)
+
+应用图标由维护者使用自己的 macOSicons API Key，在部署前同步少量固定映射；访客只加载图标 CDN 图片，不逐次提交实时应用列表。未配置 Key 也能构建和部署，没有有效图标记录时使用占位；同步记录最多有效 30 天。[图标配置、署名与更新](docs/app-icons.md)
 
 ## 更新模式与免费额度
 
@@ -83,7 +86,7 @@ curl -sS https://<worker>.<subdomain>.workers.dev/api/now
 ## 文档与贡献
 
 - [快速开始](docs/getting-started.md)、[部署和域名](docs/deployment.md)、[本机配置](docs/configuration.md)
-- [HTTP API](docs/api.md)、[OpenAPI 3.1](docs/openapi.yaml)、[接入示例](docs/integrations.md)
+- [HTTP API](docs/api.md)、[OpenAPI 3.1](docs/openapi.yaml)、[接入示例](docs/integrations.md)、[应用图标](docs/app-icons.md)
 - [免费额度](docs/quotas.md)、[架构](docs/architecture.md)、[隐私](docs/privacy.md)、[排错](docs/troubleshooting.md)
 - [贡献指南](CONTRIBUTING.md)、[行为规范](CODE_OF_CONDUCT.md)、[路线图](docs/roadmap.md)
 

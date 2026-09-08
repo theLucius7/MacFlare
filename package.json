@@ -13,7 +13,8 @@
     "test": "node --test",
     "check": "npm run docs:build && node scripts/check-site.mjs && node --check worker/index.js && wrangler deploy --dry-run",
     "docs:dev": "vitepress dev docs --host 127.0.0.1",
-    "docs:build": "vitepress build docs",
+    "docs:build": "node scripts/prepare-app-icons.mjs && vitepress build docs",
+    "icons:sync": "node scripts/sync-app-icons.mjs",
     "docs:preview": "vitepress preview docs --host 127.0.0.1"
   },
   "devDependencies": {

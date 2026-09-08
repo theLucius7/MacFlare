@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { lookupArtwork } from './music-artwork.js';
+import AppIcon from './AppIcon.vue';
 
 const snapshot = ref(null);
 const loading = ref(true);
@@ -112,7 +113,7 @@ onUnmounted(() => {
     <p v-else-if="!online && !loading" class="now-notice">没有新鲜快照。Mac 可能已休眠、停止上报，或更新尚未传播。</p>
     <div class="now-grid">
       <div class="now-metric"><span class="now-label">电池</span><strong>{{ battery }}</strong><span>{{ power }}</span></div>
-      <div class="now-metric"><span class="now-label">前台应用</span><strong class="now-title">{{ data?.active_app || '未公开' }}</strong><span>{{ data?.active_app === 'System' ? '敏感应用已隐藏' : '仅公开应用名称' }}</span></div>
+      <div class="now-metric"><span class="now-label">前台应用</span><div class="now-active-app"><AppIcon :name="data?.active_app || ''" :size="48" :now="clock" /><strong class="now-title">{{ data?.active_app || '未公开' }}</strong></div><span>{{ data?.active_app === 'System' ? '敏感应用已隐藏' : '仅公开应用名称' }}</span></div>
       <div class="now-metric now-music">
         <span class="now-label">Apple Music · {{ musicLabel }}</span>
         <div class="now-music-body">
@@ -131,8 +132,9 @@ onUnmounted(() => {
     </div>
     <div class="now-apps">
       <span class="now-label">运行中的 GUI 应用</span>
-      <ul v-if="data?.running_apps?.length"><li v-for="app in data.running_apps" :key="app">{{ app }}</li></ul>
+      <ul v-if="data?.running_apps?.length"><li v-for="app in data.running_apps" :key="app"><AppIcon :name="app" :size="24" :now="clock" /><span>{{ app }}</span></li></ul>
       <p v-else>{{ data && Array.isArray(data.running_apps) ? '当前没有可公开的应用' : '未公开' }}</p>
+      <p class="now-icon-credit"><a href="https://macosicons.com/" target="_blank" rel="noopener noreferrer">图标来自 macOSicons</a> · © 原作者 · <a href="/app-icons">署名与使用说明</a></p>
     </div>
     <div class="now-footnote">
       <span>{{ online ? `${age} 秒前收到快照` : '只显示有效期内的数据' }} · {{ loading ? '读取中' : `${countdown} 秒后可刷新` }}</span>
@@ -155,6 +157,8 @@ onUnmounted(() => {
 .now-metric strong { font-size: 34px; line-height: 1.3; font-weight: 650; letter-spacing: -.035em; }
 .now-metric strong.now-title { font-size: 23px; letter-spacing: -.025em; overflow-wrap: anywhere; }
 .now-metric > span:last-child { font-size: 14px; color: var(--vp-c-text-2); overflow-wrap: anywhere; }
+.now-active-app { display: flex; align-items: center; gap: 12px; min-height: 48px; }
+.now-active-app strong { min-width: 0; }
 .now-music-body { display: flex; align-items: center; gap: 16px; }
 .now-artwork { display: block; flex: 0 0 100px; width: 100px; height: 100px; overflow: hidden; border-radius: 10px; background: var(--vp-c-bg-soft); }
 .now-artwork img { display: block; width: 100%; height: 100%; object-fit: cover; }
@@ -165,8 +169,9 @@ onUnmounted(() => {
 .now-artwork:focus-visible { outline: 2px solid var(--vp-c-brand-1); outline-offset: 3px; }
 .now-apps { padding: 20px 22px; }
 .now-apps ul { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; padding: 0; list-style: none; }
-.now-apps li { margin: 0; padding: 4px 10px; border: 1px solid var(--vp-c-divider); border-radius: 6px; font-size: 14px; overflow-wrap: anywhere; }
+.now-apps li { display: flex; align-items: center; gap: 7px; margin: 0; padding: 5px 10px 5px 6px; border: 1px solid var(--vp-c-divider); border-radius: 8px; font-size: 14px; overflow-wrap: anywhere; }
 .now-apps p { font-size: 14px; margin-bottom: 0; color: var(--vp-c-text-2); }
+.now-apps p.now-icon-credit { margin-top: 14px; font-size: 12px; }
 .now-footnote { padding: 14px 22px; border-top: 1px solid var(--vp-c-divider); display: flex; gap: 12px; justify-content: space-between; align-items: center; font-size: 14px; color: var(--vp-c-text-2); }
 .now-footnote button { flex: 0 0 auto; border: 1px solid var(--vp-c-divider); padding: 4px 12px; border-radius: 6px; font: inherit; color: var(--vp-c-brand-1); }
 .now-footnote button:disabled { color: var(--vp-c-text-3); cursor: not-allowed; }

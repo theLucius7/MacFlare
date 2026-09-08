@@ -12,5 +12,7 @@ wrangler.local.*
 coverage/
 docs/.vitepress/cache/
 docs/.vitepress/dist/
+docs/.vitepress/theme/app-icons.json
+docs/.vitepress/theme/app-icons.json.tmp
 work/
 *.token
