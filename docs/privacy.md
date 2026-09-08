@@ -25,7 +25,25 @@ MacFlare 把选择的设备状态发布到公网。知道部署地址的任何�
 | Worker → 页面 | 固定 JSON/SVG 类型、SVG 文本转义 | 网站自身若用 `innerHTML` 插入字段仍可引入漏洞；应使用 `textContent` |
 | 公网 → Mac | 没有入站监听、远程命令或回连能力 | 单向架构减少攻击面，不等于消除所有安全风险 |
 
-`INGEST_TOKEN` 是发送状态的凭据，不是 Cloudflare 账户 API Token。前端、GitHub README、Issue、截图和 Git 历史都不应包含它。前端只调用公开的 `GET /api/now`，不要把 `/api/update` 的令牌打包进浏览器代码。
+`INGEST_TOKEN` 是发送状态的凭据，不是 Cloudflare 账户 API Token。前端、GitHub README、Issue、截图和 Git 历史都不应包含它。读取设备状态时，前端调用公开的 `GET /api/now`，不要把 `/api/update` 的令牌打包进浏览器代码。
+
+## 首页歌曲封面
+
+快照仍新鲜、Music 为 `playing` 或 `paused`，且歌名与歌手齐全时，访客浏览器直接向 Apple iTunes Search API 发起 GET：`term=歌名+歌手`、`entity=song`、`country=us`、`limit=5`。Apple 会收到这些公开曲目信息及访客的网络请求，包括连接 IP；查询不发送电池、应用、负载等其他设备指标或任何令牌。[Apple 搜索参数说明](https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/Searching.html)
+
+页面仅为可信匹配显示返回的 `artworkUrl100`，图片由访客浏览器向 Apple 图片 CDN 请求；点击封面会打开 Apple 的歌曲页面。美国商店无可信匹配时不盲选其他歌曲，搜索或图片失败只显示占位，不影响文字状态。收到 `stopped` 或快照过期时立即撤掉封面。[Apple 搜索结果字段](https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/UnderstandingSearchResults.html)
+
+查询缓存仅在当前浏览器页面的内存中：成功结果保留 1 小时，普通查询失败或无可信匹配保留 5 分钟，最多 50 条；取消的请求不缓存。MacFlare 不将其写入本地持久存储或 Cloudflare KV；浏览器及 Apple 自身的缓存遵循各自策略。此功能不改变 `/api/now` 协议，也不把封面字段写入设备快照。
+
+## 首页应用图标
+
+首页优先使用仓库中的原生 PNG。维护者在开发阶段从配置名单内的已安装应用导出图标；PNG 和应用名称、别名构成的有限清单会进入 Git 并公开发布。这不是实时运行列表，但可能透露维护者选用的软件；不要导出私有应用的图标或名称。
+
+访客从同一 Cloudflare 站点的 `/app-icons/<id>.png` 加载原生图标，不向第三方图标服务查询。公开 `/api/icons` 和 `/api/icons/<id>.png` 提供相同清单与图片，Mac 离线或上报失败也仍可读取。Cloudflare 会收到图片请求及访客网络信息；图标请求不携带电池、负载、曲目、完整运行列表或任何令牌。隐私屏蔽后的 `System` 在状态页使用占位。
+
+若维护者额外启用 macOSicons，同步时搜索 API 只接收配置中的固定应用名与鉴权请求，不接收逐个访客的实时运行列表。Key 和生成缓存不进入 Git，Key 也不进入浏览器。只有使用该补充来源时，浏览器才向图标 CDN 请求原始 `lowResPngUrl`；CDN 可看到访客网络信息和对应图片请求，可能由此推断展示的应用。
+
+原生图标是随部署保留的静态资源，不随设备快照 TTL 删除；需要移除时修改仓库并重新部署，已经公开的 Git 历史或他人副本不会自动撤回。macOSicons 响应缓存另有最多 30 天的有效期，到期不再展示。两种来源都不访问 KV，也不增加 `/api/now` 字段。[导出、署名与使用边界](app-icons.md)
 
 ## 保留与删除
 

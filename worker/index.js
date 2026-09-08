@@ -13,6 +13,14 @@ const CORS_HEADERS = {
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "no-referrer",
 };
+const ICON_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+  "Access-Control-Allow-Headers": "If-None-Match, If-Modified-Since",
+  "Access-Control-Expose-Headers": "ETag, Last-Modified",
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "no-referrer",
+};
 
 class ClientError extends Error {
   constructor(status, code) {
@@ -237,9 +245,71 @@ function badge(status) {
   } });
 }
 
+function iconError(request, status, code, headers = {}) {
+  const response = json({ error: code }, status, { ...ICON_HEADERS, ...headers });
+  return request.method === "HEAD" ? new Response(null, response) : response;
+}
+
+async function iconAsset(request, env, pathname) {
+  const catalog = pathname === "/api/icons";
+  const match = /^\/api\/icons\/([a-z0-9]+(?:-[a-z0-9]+)*)\.png$/u.exec(pathname);
+  if (!catalog && !match) return iconError(request, 404, "not_found");
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: ICON_HEADERS });
+  }
+  if (!["GET", "HEAD"].includes(request.method)) {
+    return iconError(request, 405, "method_not_allowed", { Allow: "GET, HEAD, OPTIONS" });
+  }
+  if (typeof env?.ASSETS?.fetch !== "function") {
+    return iconError(request, 503, "service_unavailable");
+  }
+
+  try {
+    const url = new URL(request.url);
+    url.pathname = catalog ? "/app-icons/index.json" : `/app-icons/${match[1]}.png`;
+    url.search = "";
+    const forwarded = new Headers();
+    // Static requests never carry a visitor's credentials or arbitrary headers.
+    for (const name of ["If-None-Match", "If-Modified-Since"]) {
+      if (request.headers.has(name)) forwarded.set(name, request.headers.get(name));
+    }
+    const asset = await env.ASSETS.fetch(new Request(url, {
+      method: request.method, headers: forwarded, redirect: "manual",
+    }));
+    if (![200, 304].includes(asset.status)) {
+      await asset.body?.cancel();
+      return asset.status === 404
+        ? iconError(request, 404, "not_found")
+        : iconError(request, 503, "service_unavailable");
+    }
+    const contentType = catalog ? "application/json" : "image/png";
+    if (asset.status === 200 && asset.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase() !== contentType) {
+      await asset.body?.cancel();
+      return iconError(request, 404, "not_found");
+    }
+    const headers = new Headers({
+      ...ICON_HEADERS,
+      "Cache-Control": "public, max-age=3600",
+      "Content-Type": catalog ? "application/json; charset=utf-8" : "image/png",
+    });
+    for (const name of ["ETag", "Last-Modified", "Content-Length"]) {
+      if (asset.headers.has(name) && (name !== "Content-Length" || asset.status === 200)) {
+        headers.set(name, asset.headers.get(name));
+      }
+    }
+    if (request.method === "HEAD") await asset.body?.cancel();
+    return new Response(request.method === "HEAD" ? null : asset.body, { status: asset.status, headers });
+  } catch {
+    return iconError(request, 503, "service_unavailable");
+  }
+}
+
 export async function handleRequest(request, env, now = Date.now()) {
   try {
     const pathname = new URL(request.url).pathname;
+    if (pathname === "/api/icons" || pathname.startsWith("/api/icons/")) {
+      return await iconAsset(request, env, pathname);
+    }
     // /api/* is canonical. Legacy paths share the handler without redirects,
     // so installed agents can keep posting their authenticated request bodies.
     const path = pathname.startsWith("/api/") ? pathname.slice(4) : pathname;

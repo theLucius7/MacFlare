@@ -45,6 +45,9 @@ with tempfile.TemporaryDirectory(prefix='macflare-native-test-') as directory:
     def runtime(*args, expected=0):
         return call(['/usr/bin/osascript', '-l', 'JavaScript', str(REPO/'agent/runtime.js'), *map(str, args)], expected=expected)
 
+    music_regressions = json.loads(call(['/usr/bin/osascript', '-l', 'JavaScript', str(REPO/'agent/tests/music-regression.js'), str(REPO/'agent/runtime.js')]))
+    assert music_regressions['passed'] == 11
+
     # Profile migration must preserve old schedules and privacy choices. Fixtures
     # exercise both installation inputs without changing HOME or loading launchd.
     origin = f'http://127.0.0.1:{server.server_port}'
@@ -139,4 +142,4 @@ with tempfile.TemporaryDirectory(prefix='macflare-native-test-') as directory:
     assert merged['music']['track'] == '星晴 🌌 "测试"'
     assert len(merged_raw.encode()) <= 15001 and len(merged['running_apps']) < 64
 server.shutdown()
-print('PASS: profile migration/validation and staged schedules, native plist, permission checks, collection/privacy, push/auth, HTTP errors/no redirects, Unicode and payload budget')
+print('PASS: 11 Music state/metadata regressions, profile migration/validation and staged schedules, native plist, permission checks, collection/privacy, push/auth, HTTP errors/no redirects, Unicode and payload budget')

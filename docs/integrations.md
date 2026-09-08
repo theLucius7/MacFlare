@@ -61,6 +61,26 @@ curl -sS https://YOUR_HOST/api/now
 
 播放歌曲时显示歌名与歌手；否则显示前台应用或在线状态。GitHub 图片代理可能缓存 SVG，直接查询 `/api/now` 才适合核验快照的新鲜度。
 
+## 应用图标直链
+
+先读取有限的公开图标清单，使用实际存在的 `id` 或返回的 `imageUrl`：
+
+```sh
+curl -sS https://YOUR_HOST/api/icons
+```
+
+图片 API 返回真实 PNG，可直接嵌入；以下 `visual-studio-code` 须存在于你的部署清单：
+
+```html
+<img src="https://YOUR_HOST/api/icons/visual-studio-code.png"
+     alt="Visual Studio Code" width="48" height="48"
+     title="应用图标版权归原作者">
+```
+
+仅需图片展示时，推荐将地址改为 `https://YOUR_HOST/app-icons/visual-studio-code.png`。它与 API 使用相同 PNG，但通过静态资源服务，无需执行 Worker；首页使用此方式。静态清单也可从 `/app-icons/index.json` 读取。
+
+图标 API 支持 GET、HEAD、OPTIONS，成功缓存 1 小时并保留 ETag 条件请求；不读取 KV 或第三方服务，但计 Worker 请求。图标随部署保留，与 Mac 在线状态无关，不会从未知应用名即时生成图标。保留版权说明，图标不属于代码 MIT 授权范围。[图标维护](app-icons.md) · [API 契约](api.md)
+
 ## 客户端约定
 
 - 只读请求无需 Bearer，不携带 Cookie 或接收 Secret。

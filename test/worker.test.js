@@ -410,3 +410,160 @@ test("unknown API paths always return JSON 404, including preflight", async () =
   }
   assert.equal(calls.length, 0);
 });
+
+function iconSetup(respond) {
+  const calls = [];
+  let stateReads = 0;
+  const env = { ASSETS: { async fetch(assetRequest) {
+    calls.push(assetRequest);
+    return respond(assetRequest);
+  } } };
+  for (const name of ["STATUS_KV", "INGEST_TOKEN", "STATUS_TTL_SECONDS"]) {
+    Object.defineProperty(env, name, { get() {
+      stateReads += 1;
+      throw new Error("Icon routes must not access device configuration.");
+    } });
+  }
+  return { env, calls, stateReads: () => stateReads };
+}
+
+test("icon catalog and PNG API proxy only fixed same-origin assets without device state or credentials", async () => {
+  const catalog = JSON.stringify({ version: 1, icons: [{
+    id: "example-app", app: "Example App", aliases: [], imageUrl: "/api/icons/example-app.png",
+    source: "installed-app", credit: "Example creator", sourceUrl: null,
+  }] });
+  const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+  for (const [path, assetPath, body, type] of [
+    ["/api/icons", "/app-icons/index.json", catalog, "application/json"],
+    ["/api/icons/example-app.png", "/app-icons/example-app.png", png, "image/png"],
+  ]) {
+    const { env, calls, stateReads } = iconSetup(() => new Response(body, { headers: {
+      "Content-Type": type, ETag: '"content-hash"', "Last-Modified": "Tue, 08 Sep 2026 10:00:00 GMT",
+      "Set-Cookie": "must-not-propagate=value", "Cache-Control": "private, no-store",
+    } }));
+    const response = await handleRequest(request(`${path}?ignored=1`, sample(), { headers: {
+      Authorization: `Bearer ${TOKEN}`, Cookie: "session=private", "X-Private": "private",
+      "If-None-Match": '"old-hash"', "If-Modified-Since": "Tue, 08 Sep 2026 09:00:00 GMT",
+    } }), env, NOW);
+    assert.equal(response.status, 200);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, `https://example.test${assetPath}`);
+    assert.equal(calls[0].method, "GET");
+    assert.equal(calls[0].redirect, "manual");
+    assert.deepEqual([...calls[0].headers], [
+      ["if-modified-since", "Tue, 08 Sep 2026 09:00:00 GMT"], ["if-none-match", '"old-hash"'],
+    ]);
+    assert.equal(response.headers.get("cache-control"), "public, max-age=3600");
+    assert.equal(response.headers.get("cdn-cache-control"), null);
+    assert.equal(response.headers.get("cloudflare-cdn-cache-control"), null);
+    assert.equal(response.headers.get("etag"), '"content-hash"');
+    assert.equal(response.headers.get("set-cookie"), null);
+    assert.equal(response.headers.get("access-control-allow-origin"), "*");
+    assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+    assert.equal(response.headers.get("content-type"), type === "image/png" ? type : `${type}; charset=utf-8`);
+    if (type === "image/png") assert.deepEqual(new Uint8Array(await response.arrayBuffer()), png);
+    else assert.equal(await response.text(), catalog);
+    assert.equal(stateReads(), 0);
+  }
+});
+
+test("icon HEAD preserves representation headers with no response body", async () => {
+  for (const path of ["/api/icons", "/api/icons/example-app.png"]) {
+    const { env, calls, stateReads } = iconSetup(() => new Response(null, { headers: {
+      "Content-Type": path === "/api/icons" ? "application/json" : "image/png",
+      "Content-Length": "123", ETag: '"content-hash"',
+    } }));
+    const response = await handleRequest(request(path, sample(), { method: "HEAD" }), env, NOW);
+    assert.equal(response.status, 200);
+    assert.equal(calls[0].method, "HEAD");
+    assert.equal(response.headers.get("content-length"), "123");
+    assert.equal(response.headers.get("cache-control"), "public, max-age=3600");
+    assert.equal(response.headers.get("etag"), '"content-hash"');
+    assert.equal(await response.text(), "");
+    assert.equal(stateReads(), 0);
+  }
+});
+
+test("icon conditional requests preserve 304 validators and cache policy", async () => {
+  const { env, calls, stateReads } = iconSetup(() => new Response(null, {
+    status: 304, headers: { ETag: '"content-hash"' },
+  }));
+  const response = await handleRequest(request("/api/icons/example-app.png", sample(), {
+    headers: { "If-None-Match": '"content-hash"' },
+  }), env, NOW);
+  assert.equal(response.status, 304);
+  assert.equal(await response.text(), "");
+  assert.equal(calls[0].headers.get("if-none-match"), '"content-hash"');
+  assert.equal(response.headers.get("etag"), '"content-hash"');
+  assert.equal(response.headers.get("cache-control"), "public, max-age=3600");
+  assert.equal(stateReads(), 0);
+});
+
+test("valid icon OPTIONS and unsupported methods do not access assets or device configuration", async () => {
+  const { env, calls, stateReads } = iconSetup(() => { throw new Error("Unexpected fetch."); });
+  for (const path of ["/api/icons", "/api/icons/example-app.png"]) {
+    const options = await handleRequest(request(path, sample(), { method: "OPTIONS" }), env, NOW);
+    assert.equal(options.status, 204);
+    assert.equal(await options.text(), "");
+    assert.equal(options.headers.get("access-control-allow-origin"), "*");
+    assert.equal(options.headers.get("access-control-allow-methods"), "GET, HEAD, OPTIONS");
+    for (const method of ["POST", "PUT", "DELETE"]) {
+      const response = await handleRequest(request(path, sample(), { method }), env, NOW);
+      assert.equal(response.status, 405);
+      assert.equal(response.headers.get("allow"), "GET, HEAD, OPTIONS");
+      assert.deepEqual(await response.json(), { error: "method_not_allowed" });
+    }
+  }
+  assert.equal(calls.length, 0);
+  assert.equal(stateReads(), 0);
+});
+
+test("icon paths reject non-PNG files, unsafe IDs, and encoded traversal without touching assets or KV", async () => {
+  const { env, calls, stateReads } = iconSetup(() => { throw new Error("Unexpected fetch."); });
+  for (const path of [
+    "/api/icons/", "/api/icons/index.json", "/api/icons/app.svg", "/api/icons/app.PNG",
+    "/api/icons/.png", "/api/icons/-app.png", "/api/icons/app-.png", "/api/icons/app--name.png",
+    "/api/icons/App.png", "/api/icons/app_name.png", "/api/icons/app.png/extra", "/api/icons//app.png",
+    "/api/icons/%2e%2e%2fnow", "/api/icons/%2E%2E%5Cnow", "/api/icons/app%2fname.png",
+    "/api/icons/https%3A%2F%2Fexample.com%2Fapp.png", "/api/icons/app%00.png",
+    "/icons", "/icons/example-app.png",
+  ]) {
+    for (const method of ["GET", "OPTIONS"]) {
+      const response = await handleRequest(request(path, sample(), { method }), env, NOW);
+      assert.equal(response.status, 404, `${method} ${path}`);
+      assert.deepEqual(await response.json(), { error: "not_found" });
+    }
+  }
+  assert.equal(calls.length, 0);
+  assert.equal(stateReads(), 0);
+});
+
+test("missing icon assets and HTML fallbacks are JSON 404; asset failures are generic 503", async () => {
+  for (const [respond, expected] of [
+    [() => new Response("Missing page", { status: 404, headers: { "Content-Type": "text/html" } }), 404],
+    [() => new Response("SPA fallback", { headers: { "Content-Type": "text/html" } }), 404],
+    [() => new Response("Upstream private error", { status: 500 }), 503],
+    [() => new Response(null, { status: 302, headers: { Location: "https://external.test/private" } }), 503],
+    [() => { throw new Error(`Private asset details ${TOKEN}`); }, 503],
+  ]) {
+    const { env, stateReads } = iconSetup(respond);
+    for (const path of ["/api/icons", "/api/icons/missing.png"]) {
+      for (const method of ["GET", "HEAD"]) {
+        const response = await handleRequest(request(path, sample(), { method }), env, NOW);
+        assert.equal(response.status, expected);
+        assert.match(response.headers.get("content-type"), /^application\/json/u);
+        assert.match(response.headers.get("cache-control"), /no-store/u);
+        assert.equal(response.headers.get("location"), null);
+        assert.equal(response.headers.get("access-control-allow-origin"), "*");
+        if (method === "HEAD") assert.equal(await response.text(), "");
+        else assert.deepEqual(await response.json(), { error: expected === 404 ? "not_found" : "service_unavailable" });
+      }
+    }
+    assert.equal(stateReads(), 0);
+  }
+  for (const env of [{}, { ASSETS: {} }]) {
+    const response = await handleRequest(request("/api/icons/example-app.png"), env, NOW);
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { error: "service_unavailable" });
+  }
+});

@@ -195,12 +195,14 @@ function music(config) {
     if (state !== 'playing' && state !== 'paused') {
       return { state: 'stopped', track: null, artist: null };
     }
-    var track = player.currentTrack();
-    return {
-      state: state,
-      track: cleanString(track.name(), 500),
-      artist: cleanString(track.artist(), 500)
-    };
+    var result = { state: state, track: null, artist: null };
+    var track;
+    // Music can expose playerState while its current track is missing (-1728).
+    // Preserve that known state and degrade each metadata field independently.
+    try { track = player.currentTrack(); } catch (_) { return result; }
+    try { result.track = cleanString(track.name(), 500); } catch (_) {}
+    try { result.artist = cleanString(track.artist(), 500); } catch (_) {}
+    return result;
   } catch (_) {
     return unavailableMusic();
   }

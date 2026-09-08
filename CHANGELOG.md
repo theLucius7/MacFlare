@@ -6,6 +6,9 @@
 
 ### Added
 
+- 从已安装应用导出有限原生 PNG 集并随仓库发布，首页优先使用静态图标；新增 `/api/icons` 清单与 `/api/icons/<id>.png` 图片接口，支持 GET/HEAD/OPTIONS、1 小时缓存及条件请求，不访问 KV 或第三方搜索。图标版权不包含在代码 MIT 授权中。
+- 可选 macOSicons 应用图标：部署前同步有限固定映射，Key 与生成缓存不入 Git，保留来源和作者；记录最多有效 30 天，缺失或过期时使用占位，不新增 KV 操作。
+- 首页歌曲封面：浏览器直连 Apple iTunes Search API，仅显示美国商店的可信匹配并链接歌曲页面；提供有界内存缓存和占位降级，不新增 KV 操作或 API 字段。
 - 同域状态主页与静态文档，规范 `/api/*` 接口，旧入口保持无重定向兼容。
 - eco（120 秒上报 / 180 秒过期）与 realtime（30 / 60）模式；旧本机配置保留原行为。
 - 可配置服务端 TTL，保存原始截止时间，兼容旧记录并覆盖模式迁移测试。
@@ -14,5 +17,9 @@
 - Cloudflare Worker 鉴权上报、公开状态查询、SVG 徽章和健康检查；KV 当前快照与服务端过期检查。
 - Worker、HTTP 边界和 macOS 原生测试，以及部署、API、配置和隐私文档。
 - 贡献与安全报告流程、行为规范、Issue/PR 模板和 Dependabot 更新配置。
+
+### Fixed
+
+- Music 当前曲目或单个元数据字段不可读时，保留已知的播放/暂停状态，缺失字段独立返回 `null`。
 
 计划功能见 [路线图](docs/roadmap.md)，已发生的代码变更见 [提交记录](https://github.com/theLucius7/MacFlare/commits/main/)。

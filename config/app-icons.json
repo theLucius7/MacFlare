@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "apps": [
+    { "app": "ChatGPT", "id": "chatgpt", "bundleId": "com.openai.codex", "query": "ChatGPT", "aliases": ["ChatGPT"], "matchNames": ["ChatGPT"] },
+    { "app": "Clash Verge", "id": "clash-verge", "bundleId": "io.github.clash-verge-rev.clash-verge-rev", "query": "Clash Verge", "aliases": ["Clash Verge"], "matchNames": ["Clash Verge", "Clash Verge Rev"] },
+    { "app": "Visual Studio Code", "id": "visual-studio-code", "bundleId": "com.microsoft.VSCode", "query": "Visual Studio Code", "aliases": ["Code", "Visual Studio Code"], "matchNames": ["Visual Studio Code", "VS Code", "VSCode"] },
+    { "app": "Finder", "id": "finder", "bundleId": "com.apple.finder", "query": "Finder", "aliases": ["Finder", "访达"], "matchNames": ["Finder"] },
+    { "app": "Ghostty", "id": "ghostty", "bundleId": "com.mitchellh.ghostty", "query": "Ghostty", "aliases": ["Ghostty"], "matchNames": ["Ghostty"] },
+    { "app": "Mail", "id": "mail", "bundleId": "com.apple.mail", "query": "Mail", "aliases": ["Mail", "邮件"], "matchNames": ["Mail", "Apple Mail"] },
+    { "app": "Music", "id": "music", "bundleId": "com.apple.Music", "query": "Apple Music", "aliases": ["Music", "音乐", "Apple Music"], "matchNames": ["Music", "Apple Music"] },
+    { "app": "Obsidian", "id": "obsidian", "bundleId": "md.obsidian", "query": "Obsidian", "aliases": ["Obsidian"], "matchNames": ["Obsidian"] },
+    { "app": "Preview", "id": "preview", "bundleId": "com.apple.Preview", "query": "Preview", "aliases": ["Preview", "预览"], "matchNames": ["Preview"] },
+    { "app": "QQ", "id": "qq", "bundleId": "com.tencent.qq", "query": "QQ", "aliases": ["QQ"], "matchNames": ["QQ", "Tencent QQ"] },
+    { "app": "Safari", "id": "safari", "bundleId": "com.apple.Safari", "query": "Safari", "aliases": ["Safari"], "matchNames": ["Safari"] },
+    { "app": "Zen", "id": "zen", "bundleId": "app.zen-browser.zen", "query": "Zen Browser", "aliases": ["Zen", "Zen Browser"], "matchNames": ["Zen", "Zen Browser"] }
+  ]
+}
