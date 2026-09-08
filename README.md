@@ -18,7 +18,7 @@ MacFlare 为个人博客、Now Page 和 GitHub README 提供 Apple Music 歌曲�
 | Apple Music | 播放／暂停／停止、歌名和歌手；未授权时独立降级 |
 | 首页歌曲封面 | 访客浏览器查询 Apple，仅显示可信匹配的封面并链接歌曲页面；无匹配时保留文字状态 |
 | 应用状态 | 前台应用和 GUI 应用列表；不采集窗口标题、路径或进程参数 |
-| 应用图标 | 可选 macOSicons 固定映射，部署前同步；保留作者与来源，未知或过期时使用占位 |
+| 应用图标 | 仓库内原生 PNG、公开图片 API 与静态直链；可选 macOSicons 补充，未知应用使用占位 |
 | 硬件状态 | 电量、充电、供电来源和系统负载平均值 |
 | 隐私控制 | 敏感应用屏蔽、追加名单、各采集项独立开关 |
 | 原生后台 | 用户登录后运行的 LaunchAgent，可安装、更新和卸载 |
@@ -27,7 +27,7 @@ MacFlare 为个人博客、Now Page 和 GitHub README 提供 Apple Music 歌曲�
 
 封面查询仅使用公开歌名和歌手，直接请求 Apple 搜索服务与图片 CDN；不增加 Cloudflare KV 操作，也不改变 `/api/now` 字段。美国商店无可信匹配时显示占位，收到停止状态或快照过期后撤掉封面。[封面隐私与缓存](docs/privacy.md#首页歌曲封面)
 
-应用图标由维护者使用自己的 macOSicons API Key，在部署前同步少量固定映射；访客只加载图标 CDN 图片，不逐次提交实时应用列表。未配置 Key 也能构建和部署，没有有效图标记录时使用占位；同步记录最多有效 30 天。[图标配置、署名与更新](docs/app-icons.md)
+应用图标优先使用从已安装应用导出的 PNG，随有限清单提交到仓库并发布。`GET /api/icons` 返回清单，`/api/icons/<id>.png` 可直接作为图片地址；首页使用无需执行 Worker 的 `/app-icons/<id>.png` 静态路径。原生图标无需第三方 Key、没有 30 天到期限制，也不依赖 Mac 在线或 KV。macOSicons 仍可作为部署前同步的可选补充，其响应缓存单独遵守 30 天限制。[导出、接入与版权说明](docs/app-icons.md)
 
 ## 更新模式与免费额度
 
@@ -98,4 +98,4 @@ npm run check
 
 CI 验证 Worker、macOS 原生脚本、文档构建与部署预检查。文档与 API 一起由 Cloudflare Worker 发布，无需 GitHub Pages。[文档维护](docs/documentation.md)
 
-采用 [MIT License](LICENSE)。MacFlare 是独立开源项目，与 Apple 或 Cloudflare 无隶属关系。
+代码采用 [MIT License](LICENSE)；应用图标归各自软件作者所有，不包含在 MIT 授权中。MacFlare 是独立开源项目，与 Apple 或 Cloudflare 无隶属关系。

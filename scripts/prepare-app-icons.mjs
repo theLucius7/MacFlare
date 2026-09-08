@@ -14,4 +14,4 @@ const now = Date.now();
 const valid = catalog.icons.filter(icon => findAppIcon(icon?.app, { version: 1, icons: [icon] }, now));
 await mkdir(new URL('.', target), { recursive: true });
 await writeFile(target, JSON.stringify({ version: 1, icons: valid }, null, 2) + '\n');
-console.log(`App icons: ${valid.length} unexpired mappings; missing icons use the built-in placeholder.`);
+console.log(`Optional macOSicons cache: ${valid.length} unexpired mappings; repository icons are loaded separately.`);

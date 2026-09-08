@@ -15,6 +15,7 @@
     "docs:dev": "vitepress dev docs --host 127.0.0.1",
     "docs:build": "node scripts/prepare-app-icons.mjs && vitepress build docs",
     "icons:sync": "node scripts/sync-app-icons.mjs",
+    "icons:export": "python3 scripts/export-app-icons.py",
     "docs:preview": "vitepress preview docs --host 127.0.0.1"
   },
   "devDependencies": {

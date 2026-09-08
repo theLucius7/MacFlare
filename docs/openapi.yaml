@@ -6,8 +6,10 @@ info:
   description: >-
     单设备协议 schema_version=1。写入须 Bearer 鉴权，查询公开。
     KV expirationTtl 由服务器配置，默认 eco 180 秒，realtime 60 秒，读取按服务端时间判断新鲜度；KV 最终一致可能造成旧值或暂时离线。
-    已知路径支持 OPTIONS 204，不支持 HEAD；未知路径返回 404。查询参数不改变行为。
-    JSON/SVG 响应均设置 CORS * 与 no-store。示例都是合成数据，发送前必须更新 collected_at。
+    已知路径支持 OPTIONS 204，仅图标接口支持 HEAD；未知路径或图标返回 404。查询参数不改变行为。
+    所有接口设置 CORS *；状态接口使用 no-store，图标 API 成功响应公开缓存 1 小时，不访问 KV。
+    原生图标为有限静态清单，与设备在线状态无关；API 请求会执行 Worker，静态 /app-icons/ 路径无需执行。
+    示例都是合成数据，发送状态前必须更新 collected_at。图标版权不包含在代码的 MIT 授权中。
   license:
     name: MIT
     identifier: MIT
@@ -164,6 +166,107 @@ paths:
       responses:
         '204':
           $ref: '#/components/responses/Preflight'
+  /api/icons:
+    parameters:
+      - $ref: '#/components/parameters/IfNoneMatch'
+      - $ref: '#/components/parameters/IfModifiedSince'
+    get:
+      operationId: getIconManifest
+      summary: 读取部署内的原生图标清单
+      description: 有限清单，不提供搜索或分页，不代表实时运行列表；不读取 KV 或第三方服务。
+      responses:
+        '200':
+          description: 随站点发布的原生图标映射
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/IconCacheControl'
+            ETag:
+              $ref: '#/components/headers/AssetETag'
+            Last-Modified:
+              $ref: '#/components/headers/AssetLastModified'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IconManifest'
+        '304':
+          $ref: '#/components/responses/IconNotModified'
+        '404':
+          $ref: '#/components/responses/IconNotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    head:
+      operationId: headIconManifest
+      summary: 读取图标清单的状态与响应头，不返回正文
+      responses:
+        '200':
+          $ref: '#/components/responses/IconHead'
+        '304':
+          $ref: '#/components/responses/IconNotModified'
+        '404':
+          description: not_found；清单不存在，无正文
+        '503':
+          description: service_unavailable；站点资源绑定不可用，无正文
+    options:
+      operationId: optionsIconManifest
+      responses:
+        '204':
+          $ref: '#/components/responses/IconPreflight'
+  /api/icons/{id}.png:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: 使用图标清单中实际存在的 id，区分大小写
+        schema:
+          type: string
+          pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+        example: visual-studio-code
+      - $ref: '#/components/parameters/IfNoneMatch'
+      - $ref: '#/components/parameters/IfModifiedSince'
+    get:
+      operationId: getIconPng
+      summary: 返回原生 PNG，可直接用于 img src
+      description: 不读取 KV 或第三方服务，Mac 离线仍可访问；相同资源静态路径为 /app-icons/{id}.png。
+      responses:
+        '200':
+          description: 原生应用图标，版权归各自软件作者
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/IconCacheControl'
+            ETag:
+              $ref: '#/components/headers/AssetETag'
+            Last-Modified:
+              $ref: '#/components/headers/AssetLastModified'
+          content:
+            image/png:
+              schema: {type: string, format: binary}
+        '304':
+          $ref: '#/components/responses/IconNotModified'
+        '404':
+          $ref: '#/components/responses/IconNotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    head:
+      operationId: headIconPng
+      summary: 读取 PNG 的状态与响应头，不返回正文
+      responses:
+        '200':
+          $ref: '#/components/responses/IconHead'
+        '304':
+          $ref: '#/components/responses/IconNotModified'
+        '404':
+          description: not_found；图标不存在，无正文
+        '503':
+          description: service_unavailable；站点资源绑定不可用，无正文
+    options:
+      operationId: optionsIconPng
+      responses:
+        '204':
+          $ref: '#/components/responses/IconPreflight'
 components:
   securitySchemes:
     ingestBearer:
@@ -172,7 +275,65 @@ components:
       description: >-
         独立 INGEST_TOKEN，32–1024 字符且不含空白，推荐32字节随机值的64位十六进制表示。
         与 Cloudflare 账户 API Token 不同，禁止放入前端、URL 或仓库。
+  parameters:
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      required: false
+      description: 传递给静态资源层的 ETag 条件，未修改时可返回 304
+      schema: {type: string}
+    IfModifiedSince:
+      name: If-Modified-Since
+      in: header
+      required: false
+      description: 传递给静态资源层的 HTTP 日期条件
+      schema: {type: string}
+  headers:
+    IconCacheControl:
+      schema: {type: string, const: 'public, max-age=3600'}
+    AssetETag:
+      description: 静态资源层提供时保留，浏览器跨域可读取
+      schema: {type: string}
+    AssetLastModified:
+      description: 静态资源层提供时保留，浏览器跨域可读取
+      schema: {type: string}
   responses:
+    IconHead:
+      description: 与 GET 相同的资源响应头，无正文
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/IconCacheControl'
+        ETag:
+          $ref: '#/components/headers/AssetETag'
+        Last-Modified:
+          $ref: '#/components/headers/AssetLastModified'
+    IconNotModified:
+      description: 条件请求未修改，无正文
+      headers:
+        Cache-Control:
+          $ref: '#/components/headers/IconCacheControl'
+        ETag:
+          $ref: '#/components/headers/AssetETag'
+        Last-Modified:
+          $ref: '#/components/headers/AssetLastModified'
+    IconNotFound:
+      description: not_found；未知或缺失的图标资源
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example: {error: not_found}
+    IconPreflight:
+      description: 图标接口 CORS 预检，无正文，无需鉴权
+      headers:
+        Access-Control-Allow-Origin:
+          schema: {type: string, const: '*'}
+        Access-Control-Allow-Methods:
+          schema: {type: string, const: 'GET, HEAD, OPTIONS'}
+        Access-Control-Allow-Headers:
+          schema: {type: string, const: 'If-None-Match, If-Modified-Since'}
+        Access-Control-Expose-Headers:
+          schema: {type: string, const: 'ETag, Last-Modified'}
     Preflight:
       description: 已知路径的 CORS 预检，无正文，无需鉴权
       headers:
@@ -183,21 +344,72 @@ components:
         Access-Control-Allow-Headers:
           schema: {type: string, const: 'Authorization, Content-Type'}
     MethodNotAllowed:
-      description: method_not_allowed；已知路径使用不支持的方法，含 HEAD
+      description: method_not_allowed；已知路径使用不支持的方法，允许方法依路径确定
       headers:
         Allow:
-          schema: {type: string, enum: ['GET, OPTIONS', 'POST, OPTIONS']}
+          schema: {type: string, enum: ['GET, OPTIONS', 'POST, OPTIONS', 'GET, HEAD, OPTIONS']}
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
     Unavailable:
-      description: service_unavailable；所需配置无效或存储访问失败，不暴露平台内部详情
+      description: service_unavailable；所需配置无效、存储或站点资源访问失败，不暴露平台内部详情
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
   schemas:
+    IconManifest:
+      type: object
+      additionalProperties: false
+      required: [version, icons]
+      properties:
+        version: {type: integer, const: 1}
+        icons:
+          type: array
+          description: 随部署发布的有限图标集合，不随实时运行列表变化
+          items:
+            $ref: '#/components/schemas/InstalledAppIcon'
+    InstalledAppIcon:
+      type: object
+      additionalProperties: false
+      required: [id, app, aliases, imageUrl, source, credit, sourceUrl]
+      properties:
+        id:
+          type: string
+          pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+          example: visual-studio-code
+        app:
+          type: string
+          minLength: 1
+          example: Visual Studio Code
+        aliases:
+          type: array
+          minItems: 1
+          items: {type: string, minLength: 1}
+          example: [Code, Visual Studio Code]
+        imageUrl:
+          type: string
+          pattern: '^/api/icons/[a-z0-9]+(?:-[a-z0-9]+)*\.png$'
+          description: 相对于部署根域名的 PNG API 路径，id 与该记录一致
+          example: /api/icons/visual-studio-code.png
+        source:
+          type: string
+          const: installed-app
+        credit:
+          type: string
+          minLength: 1
+          example: 应用图标版权归原作者
+        sourceUrl:
+          type: [string, 'null']
+          format: uri
+          pattern: '^https://'
+          description: 可用时为官方 HTTPS 来源地址，否则为 null
+          example: null
+        sha256:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+          description: 可选的 PNG 文件 SHA-256 摘要
     UtcTimestamp:
       type: string
       format: date-time

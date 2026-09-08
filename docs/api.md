@@ -10,9 +10,11 @@
 | `GET` | `/api/now` | 无 | 读取在线快照或离线状态 |
 | `GET` | `/api/badge.svg` | 无 | 生成状态 SVG 徽章 |
 | `GET` | `/api/health` | 无 | 检查 Worker 能否响应，不读取 KV |
+| `GET`、`HEAD` | `/api/icons` | 无 | 读取部署内的原生图标清单 |
+| `GET`、`HEAD` | `/api/icons/<id>.png` | 无 | 返回清单内的真实 PNG |
 | `OPTIONS` | 以上已知路径 | 无 | CORS 预检，返回 204 |
 
-没有尾斜线别名；`/api/now/` 是未知路径。`HEAD` 未实现，返回 405。查询参数不改变响应。JSON 使用 `application/json; charset=utf-8`，SVG 使用 `image/svg+xml; charset=utf-8`。
+没有尾斜线别名；`/api/now/` 是未知路径。只有图标接口支持 `HEAD`，原有状态、写入、徽章与健康接口仍返回 405。查询参数不改变响应。JSON 使用 `application/json; charset=utf-8`，SVG 使用 `image/svg+xml; charset=utf-8`，图标使用 `image/png`。
 
 旧 `/update`、`/now`、`/badge.svg`、`/health` 保留兼容且不重定向，新集成使用 `/api/*`。根路径 `/` 为状态主页，文档 API 参考页面位于 `/api`。
 
@@ -101,6 +103,35 @@ KV 不可用与没有记录不同：存储访问失败返回 503。客户端应�
 
 返回 `{"ok":true,"service":"macflare"}`。不读取 KV，不检查 Secret，不检查 Mac 是否更新；适用于路由存活探测，不能用来证明整个链路健康。
 
+## `GET /api/icons` 与 `GET /api/icons/<id>.png`
+
+图标清单来自部署内的 `docs/public/app-icons/index.json`，不是实时运行列表，不提供搜索或分页。示例：
+
+```json
+{
+  "version": 1,
+  "icons": [
+    {
+      "id": "visual-studio-code",
+      "app": "Visual Studio Code",
+      "aliases": ["Code", "Visual Studio Code"],
+      "imageUrl": "/api/icons/visual-studio-code.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null
+    }
+  ]
+}
+```
+
+`imageUrl` 是相对于部署根域名的图片路径；使用返回的 `id`，其格式为小写字母或数字，以单个连字符分段。`source` 表示从已安装应用导出，`sourceUrl` 可为官方 HTTPS 来源地址或 `null`；清单可能附带可选 `sha256`。图片及署名不包含在代码的 MIT 授权中。
+
+`GET /api/icons/visual-studio-code.png` 直接返回 PNG 字节，可用于 `<img src>`。这两个路径均支持 `HEAD`（与 GET 相同状态及响应头，无正文）和 `OPTIONS`。未知图标返回 `404 {"error":"not_found"}`；站点资源绑定缺失或不可用时返回通用 503。`HEAD` 的错误也不含正文。
+
+接口不读取 KV、不调用第三方、不要求令牌，也不依赖 Mac 在线或上报成功；成功响应设置 `Cache-Control: public, max-age=3600`。资源存在 ETag 或 Last-Modified 时予以保留，并向静态资源层传递 `If-None-Match`、`If-Modified-Since`；未修改可返回 304，无正文。
+
+图片 API 的请求会执行 Worker。仅需图片展示时推荐相同资源的静态路径 `/app-icons/<id>.png`，无需执行 Worker；静态清单位于 `/app-icons/index.json`。首页使用静态路径，而清单的 `imageUrl` 保留统一 API 地址。[导出与发布](app-icons.md) · [接入示例](integrations.md#应用图标直链)
+
 ## 错误格式
 
 ```json
@@ -112,16 +143,16 @@ KV 不可用与没有记录不同：存储访问失败返回 503。客户端应�
 | 400 | `invalid_json` | 正文为空、UTF-8 或 JSON 无效 |
 | 400 | `invalid_payload` | 协议字段、类型、额外字段或时间不合法 |
 | 401 | `unauthorized` | Bearer 缺失或不正确；附带 `WWW-Authenticate: Bearer` |
-| 404 | `not_found` | 未知路径 |
+| 404 | `not_found` | 未知路径或不存在的图标资源 |
 | 405 | `method_not_allowed` | 已知路径使用错误方法；附带 `Allow` |
 | 413 | `payload_too_large` | 正文过大或 Content-Length 非法 |
 | 415 | `unsupported_media_type` | 内容类型错误，或使用非 identity Content-Encoding |
-| 503 | `service_unavailable` | 所需绑定/Secret/TTL 配置缺失或无效，或存储访问失败 |
+| 503 | `service_unavailable` | 所需绑定/Secret/TTL 配置缺失或无效，存储访问失败，或图标站点资源不可用 |
 
 鉴权先于请求正文解析；所需绑定配置检查先于接收鉴权。错误正文不暴露令牌、原始请求或平台内部详情。接口没有专门的每日配额控制；平台写入配额错误经通用 503 表达。
 
 ## CORS 与缓存
 
-响应允许 `Access-Control-Allow-Origin: *`；预检允许 `GET, POST, OPTIONS` 和 `Authorization, Content-Type`。不启用凭据式 Cookie 请求。公开页面只做 GET，不应持有接收令牌。
+响应允许 `Access-Control-Allow-Origin: *`。状态接口预检允许 `GET, POST, OPTIONS` 和 `Authorization, Content-Type`；图标接口允许 `GET, HEAD, OPTIONS` 和 `If-None-Match, If-Modified-Since`，并公开 ETag、Last-Modified 响应头。不启用凭据式 Cookie 请求。公开页面不应持有接收令牌。
 
-响应设置 `Cache-Control: no-store, max-age=0` 以及 CDN no-store 头。Worker 的 KV 读取另有 30 秒 `cacheTtl`；HTTP 缓存头不会消除 KV 的最终一致传播，也不能约束第三方保存公开信息。CORS 仅控制浏览器读取行为，不保护公开状态不被抓取。
+状态、写入、徽章和健康响应设置 `Cache-Control: no-store, max-age=0` 以及 CDN no-store 头；图标 API 的成功响应单独使用 1 小时公开缓存。Worker 的 KV 读取另有 30 秒 `cacheTtl`；HTTP 缓存头不会消除 KV 的最终一致传播，也不能约束第三方保存公开信息。CORS 仅控制浏览器读取行为，不保护公开状态不被抓取。

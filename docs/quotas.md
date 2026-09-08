@@ -66,11 +66,21 @@ Worker 接受 60–3600 秒整数 TTL；本机提供上述两个受支持的 pro
 
 失败重试间隔至少 5 分钟，页面隐藏或设备快照失效时不重试。
 
-## 应用图标的同步额度
+## 应用图标的请求与额度
 
-macOSicons 搜索只在维护者运行 `npm run icons:sync` 时发生，使用有限的固定应用配置；普通构建、状态轮询和访客查看页面都不会触发搜索。浏览器直接加载图标 CDN 图片，不增加 Cloudflare KV 读写。
+原生图标由 `npm run icons:export` 在开发用 Mac 上一次导出，不调用 macOSicons，不消耗其额度；普通构建直接使用仓库中的 PNG 与清单。
 
-同步复用距离到期仍超过 2 天的记录；每个未复用应用最多查询一次且不自动重试。记录最多有效 30 天，过期后需重新同步并部署。默认配置 12 个应用，首次完整查询最多 12 次；实际以未复用条目为准。`--force` 会跳过复用、增加请求消耗。macOSicons 套餐和请求额度以账户当前说明为准，本项目不会自动升级。[图标配置与同步](app-icons.md)
+| 图标读取方式 | Worker 执行 | KV | 第三方图标搜索 |
+| --- | --- | --- | --- |
+| `/app-icons/<id>.png`、`/app-icons/index.json` 静态资源 | 无 | 无 | 无 |
+| `/api/icons`、`/api/icons/<id>.png` API | 有，计 Worker 请求 | 无 | 无 |
+| 可选 macOSicons 补充图片 | 浏览器直连 CDN | 无 | 页面访问不搜索 |
+
+首页使用静态图片路径；只需嵌入图标时也推荐该路径。API 成功响应允许缓存 1 小时并支持 ETag 条件请求，但实际进入 API 的请求仍计 Worker 请求，不能视为无限免费接口。[Cloudflare 静态资源计费](https://developers.cloudflare.com/workers/static-assets/billing-and-limitations/)
+
+可选 macOSicons 搜索只在维护者运行 `npm run icons:sync` 时发生。同步复用距离到期仍超过 2 天的记录；每个未复用应用最多查询一次且不自动重试。记录最多有效 30 天，过期后需重新同步并部署。默认配置 12 个应用，首次完整查询最多 12 次；`--force` 会跳过复用并额外消耗额度。
+
+macOSicons 的 `GET /api/v1/usage` 只读返回当前 Key 的月度 `used`、`limit`、`remaining` 和 UTC 重置时间，不消耗查询额度；以自己的返回值为准。例如搜索限额为 50 次/月时，一次 12 应用同步在该限额内，反复强制同步仍可能耗尽额度。本项目不会自动升级套餐。[官方用量接口](https://macosicons.com/developers.md) · [图标配置与同步](app-icons.md)
 
 ## 如果还需要更低消耗
 

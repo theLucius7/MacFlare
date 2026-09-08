@@ -39,10 +39,11 @@ curl -i https://<worker>.<subdomain>.workers.dev/api/now
 
 ## 应用图标显示占位
 
-- 首次克隆、没有 Key 或尚未同步时，空图标清单是正常状态。先按 [图标配置](app-icons.md#同步并发布) 执行 `npm run icons:sync -- --key-file /private/path/macosicons-api-key`，再运行 `npm run deploy`；仅构建不会搜索图标。
-- 未配置应用、别名或候选名称不匹配、隐私屏蔽后的 `System` 都使用占位。核对 `config/app-icons.json` 中的 `aliases`、`matchNames`，不要将屏蔽应用加入映射以绕过隐私处理。
-- 记录到达 `expiresAt` 后不再展示；重新同步并部署。剩余有效期超过 2 天的记录通常会被复用，只有确需重新查询时才用 `--force`，它会额外消耗额度。
-- Key 无效、服务限流、没有可信结果或图标 CDN 加载失败都可能导致占位。不要公开 Key 或反复强制重试；图片失败不影响应用名称、其他状态或 `/api/now`。
+- 先读取 `/api/icons`，用返回的 `id` 请求 `/api/icons/<id>.png` 或 `/app-icons/<id>.png`。清单是部署时的有限图标集，不随运行列表增加，也不受 Mac 离线影响；图片 API 对未知图标返回 JSON 404。
+- 缺少原生图标时，在装有目标应用的 Mac 上按 [导出说明](app-icons.md#原生图标导出与发布) 运行 `npm run icons:export`，检查并提交生成的 PNG 与清单，再 `npm run deploy`。原生导出无需 macOSicons Key，普通构建不会自动扫描本机应用。
+- 未配置应用、别名不匹配或隐私屏蔽后的 `System` 使用占位。核对 `config/app-icons.json` 中的 `aliases`，不要绕过隐私处理。已发布图标变更可能受 HTTP 缓存影响；图片 API 缓存 1 小时，可用条件请求检查是否更新。
+- 图标 API 的 503 应检查站点 `ASSETS` 绑定、构建产物与发布；它不使用 `STATUS_KV` 或 `INGEST_TOKEN`。PNG 加载失败不影响应用名称或 `/api/now`。
+- 仅对可选 macOSicons 来源：无 Key、未同步、`matchNames` 不匹配、服务限流、CDN 失败或到达 `expiresAt` 都可能显示占位。按 [同步说明](app-icons.md#同步并发布) 更新后重新部署；剩余有效期超过 2 天的记录会复用，确需重查才使用额外消耗额度的 `--force`。原生 PNG 不受这项 30 天有效期限制。
 
 ## 看不到前台或运行中的应用
 

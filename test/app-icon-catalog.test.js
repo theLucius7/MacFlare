@@ -97,3 +97,22 @@ test('invalid records cannot hide a later valid exact match and returned records
   assert.equal(findAppIcon('Code', data, NOW).imageUrl, item.imageUrl);
   assert.equal(lookup('Code', entry({ credit: null, creditUrl: 'javascript:alert(1)' })).creditUrl, null);
 });
+
+test('repository icons use fixed same-origin assets without a third-party cache deadline', () => {
+  const local = { id: 'visual-studio-code', app: 'Visual Studio Code', aliases: ['Code'],
+    source: 'installed-app', imageUrl: '/api/icons/visual-studio-code.png',
+    sourceUrl: null, credit: 'Application publisher' };
+  const icon = lookup('Code', local, NOW + 365 * DAY);
+  assert.equal(icon.imageUrl, '/api/icons/visual-studio-code.png');
+  assert.equal(icon.assetUrl, '/app-icons/visual-studio-code.png');
+  assert.equal(icon.source, 'installed-app');
+  assert.equal(icon.sourceUrl, null);
+  assert.equal(icon.credit, 'Application publisher');
+  assert.equal(lookup('System', { ...local, aliases: ['System'] }), null);
+  for (const imageUrl of ['https://example.com/icon.png', '//example.com/icon.png', '/api/icons/other.png', '/app-icons/visual-studio-code.png', '/api/icons/visual-studio-code.svg']) {
+    assert.equal(lookup('Code', { ...local, imageUrl }), null);
+  }
+  for (const id of ['../private', 'a/b', 'icon?key=test', '__proto__', '']) {
+    assert.equal(lookup('Code', { ...local, id, imageUrl: `/api/icons/${id}.png` }), null);
+  }
+});

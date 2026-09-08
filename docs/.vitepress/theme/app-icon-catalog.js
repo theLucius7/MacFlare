@@ -44,6 +44,19 @@ export function findAppIcon(name, catalog, now = Date.now()) {
     if (own(entry, 'aliases') && Array.isArray(entry.aliases)) names.push(...entry.aliases);
     if (!names.some((candidate) => normalizeName(candidate) === key)) continue;
 
+    if (own(entry, 'source') && entry.source === 'installed-app') {
+      const id = own(entry, 'id') && typeof entry.id === 'string' ? entry.id : '';
+      if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(id) || !own(entry, 'imageUrl')
+        || entry.imageUrl !== `/api/icons/${id}.png`) continue;
+      return {
+        id, app: entry.app.trim(), source: 'installed-app', imageUrl: entry.imageUrl,
+        assetUrl: `/app-icons/${id}.png`,
+        sourceUrl: own(entry, 'sourceUrl') ? httpsUrl(entry.sourceUrl) : null,
+        credit: own(entry, 'credit') && typeof entry.credit === 'string' ? entry.credit.trim() : '',
+        creditUrl: own(entry, 'creditUrl') ? httpsUrl(entry.creditUrl) : null,
+      };
+    }
+
     const fetched = own(entry, 'fetchedAt') ? timestamp(entry.fetchedAt) : NaN;
     const expires = own(entry, 'expiresAt') ? timestamp(entry.expiresAt) : NaN;
     if (!Number.isFinite(fetched) || !Number.isFinite(expires)
@@ -53,6 +66,7 @@ export function findAppIcon(name, catalog, now = Date.now()) {
     if (!imageUrl || !sourceUrl) continue;
     return {
       app: entry.app.trim(),
+      source: 'macosicons',
       imageUrl,
       sourceUrl,
       credit: own(entry, 'credit') && typeof entry.credit === 'string' ? entry.credit.trim() : '',

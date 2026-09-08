@@ -134,7 +134,7 @@ onUnmounted(() => {
       <span class="now-label">运行中的 GUI 应用</span>
       <ul v-if="data?.running_apps?.length"><li v-for="app in data.running_apps" :key="app"><AppIcon :name="app" :size="24" :now="clock" /><span>{{ app }}</span></li></ul>
       <p v-else>{{ data && Array.isArray(data.running_apps) ? '当前没有可公开的应用' : '未公开' }}</p>
-      <p class="now-icon-credit"><a href="https://macosicons.com/" target="_blank" rel="noopener noreferrer">图标来自 macOSicons</a> · © 原作者 · <a href="/app-icons">署名与使用说明</a></p>
+      <p class="now-icon-credit">应用原生图标 · © 各软件作者 · <a href="/api/icons">图标 API</a> · <a href="/app-icons">来源与使用说明</a></p>
     </div>
     <div class="now-footnote">
       <span>{{ online ? `${age} 秒前收到快照` : '只显示有效期内的数据' }} · {{ loading ? '读取中' : `${countdown} 秒后可刷新` }}</span>

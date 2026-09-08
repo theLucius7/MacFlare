@@ -1,0 +1,156 @@
+{
+  "version": 1,
+  "icons": [
+    {
+      "id": "chatgpt",
+      "app": "ChatGPT",
+      "aliases": [
+        "ChatGPT"
+      ],
+      "imageUrl": "/api/icons/chatgpt.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "716cd22f000bac2a79f8ce2946058fba082bbdfb45dfceb77a30580b67062a0f"
+    },
+    {
+      "id": "clash-verge",
+      "app": "Clash Verge",
+      "aliases": [
+        "Clash Verge"
+      ],
+      "imageUrl": "/api/icons/clash-verge.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "2775e90b9c5457eb6da7eb1748538da6bd9f06399553297d7dcabd498cfa4ffb"
+    },
+    {
+      "id": "visual-studio-code",
+      "app": "Visual Studio Code",
+      "aliases": [
+        "Code",
+        "Visual Studio Code"
+      ],
+      "imageUrl": "/api/icons/visual-studio-code.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "d46dfc868fcf15e8249d804eb2f9037197e7de6ff14752ea00a6cf7f8e4298c3"
+    },
+    {
+      "id": "finder",
+      "app": "Finder",
+      "aliases": [
+        "Finder",
+        "访达"
+      ],
+      "imageUrl": "/api/icons/finder.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "4f6c4190d4a9644a879805b91c4cbfeb3486bb13174eb341658c8f7a0f51ad59"
+    },
+    {
+      "id": "ghostty",
+      "app": "Ghostty",
+      "aliases": [
+        "Ghostty"
+      ],
+      "imageUrl": "/api/icons/ghostty.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "cb414e878bacd68e338937d4ab9fb238ea34fef50c11c645a590ffbe35f89939"
+    },
+    {
+      "id": "mail",
+      "app": "Mail",
+      "aliases": [
+        "Mail",
+        "邮件"
+      ],
+      "imageUrl": "/api/icons/mail.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "3a23e17ab5305f08289dc8c303a637dd096a947495b6a875354d41c4130ff739"
+    },
+    {
+      "id": "music",
+      "app": "Music",
+      "aliases": [
+        "Music",
+        "音乐",
+        "Apple Music"
+      ],
+      "imageUrl": "/api/icons/music.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "c8d70730732519bc419624522760fdf07e21d7af393fdd090e609e3e2024f3ea"
+    },
+    {
+      "id": "obsidian",
+      "app": "Obsidian",
+      "aliases": [
+        "Obsidian"
+      ],
+      "imageUrl": "/api/icons/obsidian.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "3b188dc5ce0a43710b21bd28682a3c5d09a2c235b449e8998b8fec043996b7a2"
+    },
+    {
+      "id": "preview",
+      "app": "Preview",
+      "aliases": [
+        "Preview",
+        "预览"
+      ],
+      "imageUrl": "/api/icons/preview.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "5c66f94110dc0465b4e4ed20beeec8ceaff43de2c407617ef835eeab7afdcf1a"
+    },
+    {
+      "id": "qq",
+      "app": "QQ",
+      "aliases": [
+        "QQ"
+      ],
+      "imageUrl": "/api/icons/qq.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "d1e41f783ac2c16a4be3201325cc4f1fc748e4693a6cc736120a47bbe6fbccdb"
+    },
+    {
+      "id": "safari",
+      "app": "Safari",
+      "aliases": [
+        "Safari"
+      ],
+      "imageUrl": "/api/icons/safari.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "214dd888fc3feef1eef08b7d591c2ce61b8211021cd0a77338c80eb4487e64f4"
+    },
+    {
+      "id": "zen",
+      "app": "Zen",
+      "aliases": [
+        "Zen",
+        "Zen Browser"
+      ],
+      "imageUrl": "/api/icons/zen.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "fb391e2d5694da36376acd01a85762aab95de8ed7933c555db5ae31f09278097"
+    }
+  ]
+}
