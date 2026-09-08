@@ -1,14 +1,14 @@
-## 变更
+## Changes
 
-<!-- 说明解决的问题、触发条件和改变后的行为；关联 Issue（如有）。 -->
+<!-- Explain the problem, trigger conditions, and resulting behavior. Link an issue if applicable. -->
 
-## 验证
+## Validation
 
-<!-- 列出实际执行的命令与结果；macOS/TCC 变更分别说明手动和后台结果。仅文档变更说明链接与示例检查即可。 -->
+<!-- List the commands actually run and their results. For macOS/TCC changes, describe manual and background results separately. For documentation-only changes, link and example checks are sufficient. -->
 
-## 兼容性与文档
+## Compatibility and documentation
 
-<!-- 如涉及协议、配置、公开字段、调度或依赖，说明迁移、隐私及用量影响；不适用可写“不适用”。用户可见变更请同步文档和 CHANGELOG 的 Unreleased。 -->
+<!-- For protocol, configuration, public field, scheduling, or dependency changes, describe migration, privacy, and usage effects; write "N/A" when not applicable. Update documentation and CHANGELOG Unreleased for user-visible behavior changes. -->
 
-- [ ] 提交和描述不包含真实凭据或个人状态快照。
-- [ ] 已说明相关验证，以及尚未覆盖的环境或行为。
+- [ ] Commits and descriptions contain no real credentials or personal status snapshots.
+- [ ] Relevant validation and any untested environments or behavior are documented.
