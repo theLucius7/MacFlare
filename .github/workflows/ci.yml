@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run check
+  macos-agent:
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check system Bash syntax
+        run: |
+          /bin/bash -n agent/macflare.sh
+          /bin/bash -n scripts/install.sh
+          /bin/bash -n scripts/uninstall.sh
+      - name: Check native JavaScript syntax
+        run: node --check agent/runtime.js
+      - name: Run macOS native smoke checks
+        run: python3 agent/tests/native-smoke.py

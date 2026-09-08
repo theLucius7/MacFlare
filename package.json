@@ -1,0 +1,15 @@
+{
+  "name": "macflare",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Native macOS status, pushed to a privacy-conscious Cloudflare Worker.",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "node --test",
+    "check": "node --check worker/index.js && wrangler deploy --dry-run"
+  },
+  "devDependencies": { "wrangler": "4.129.1" }
+}

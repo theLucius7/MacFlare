@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "macflare",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-09-08",
+  "workers_dev": true,
+  "preview_urls": false,
+  "send_metrics": false,
+  "observability": { "enabled": false },
+  "kv_namespaces": [
+    {
+      "binding": "STATUS_KV",
+      // Create a namespace with: npx wrangler kv namespace create STATUS_KV
+      // Replace this placeholder with its id before deployment.
+      "id": "00000000000000000000000000000000"
+    }
+  ]
+  // INGEST_TOKEN is a Worker secret, never a plaintext var in this file.
+}

@@ -1,0 +1,11 @@
+{
+  "endpoint": "https://macflare.your-subdomain.workers.dev",
+  "privacy": {
+    "active_app": true,
+    "running_apps": true,
+    "battery": true,
+    "system": true,
+    "music": true
+  },
+  "blocked_apps": []
+}

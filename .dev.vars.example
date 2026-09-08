@@ -1,0 +1,3 @@
+# Local Wrangler development only. Copy to .dev.vars; never commit a real token.
+# Replace this example with a random token of at least 32 characters.
+INGEST_TOKEN=replace-with-a-random-token-at-least-32-characters
