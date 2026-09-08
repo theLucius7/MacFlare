@@ -3,6 +3,7 @@ They never change focus, send Music Apple Events, or upload to the public Worker
 """
 import http.server
 import datetime
+import concurrent.futures
 import json
 import pathlib
 import secrets
@@ -84,6 +85,7 @@ with tempfile.TemporaryDirectory(prefix='macflare-window-native-') as folder:
     assert process.returncode == 0, stderr
     assert secret not in stdout + stderr + duplicate.stdout + duplicate.stderr
     report = json.loads(stdout)
+    assert report['checkpoint_writes'] == 4 and report['checkpoint_ordinary_writes'] == 0, 'startup, pre/post failed upload and final exit force saves; notifications do not'
     state = json.loads((root/'window-cache.json').read_text())
     names = [event['changes']['active_app'] for event in state['events'] if 'active_app' in event['changes']]
     songs = [event['changes']['music']['track'] for event in state['events'] if 'music' in event['changes']]
@@ -111,6 +113,8 @@ with tempfile.TemporaryDirectory(prefix='macflare-window-native-') as folder:
     updated = root/'config-next.json'; updated.write_text(json.dumps(settings)); updated.chmod(0o600); updated.replace(config)
     stdout, stderr = process.communicate(timeout=8)
     assert process.returncode == 0, stderr
+    privacy_report = json.loads(stdout)
+    assert privacy_report['checkpoint_writes'] >= 5 and privacy_report['checkpoint_ordinary_writes'] == 0, 'privacy reset and replacement upload force saves before ten seconds'
     private_state = json.loads((root/'window-cache.json').read_text())
     assert private_state['session_id'] != previous_session
     assert json.loads(private_state['fingerprint'])['privacy'] == settings['privacy']
@@ -147,9 +151,101 @@ with tempfile.TemporaryDirectory(prefix='macflare-window-native-') as folder:
     sleep_argv = [*argv[:-2], 'observe', '2']
     sleep_run = subprocess.run(sleep_argv, capture_output=True, text=True, timeout=5)
     assert sleep_run.returncode == 0, sleep_run.stderr
+    sleep_report = json.loads(sleep_run.stdout)
+    assert sleep_report['checkpoint_writes'] == 4 and sleep_report['checkpoint_ordinary_writes'] == 0, 'startup, sleep, wake and final exit force saves'
     slept = json.loads((root/'window-cache.json').read_text())
     assert any(gap['reason'] == 'sleep' for gap in slept['gaps'])
     assert slept['current']['music']['state'] == 'unavailable'
 
+    # A failed collector or malformed successful output is an immediate durable
+    # boundary even when its unknown values equal the already-unknown snapshot.
+    settings['privacy']['battery'] = True; settings['privacy']['system'] = True
+    config.write_text(json.dumps(settings)); config.chmod(0o600)
+    for command in ["'/usr/bin/false', []", "'/bin/echo', ['{malformed']"]:
+        (root/'window-cache.json').unlink()
+        failure_source = (REPO/'agent/window-runtime.js').read_text()
+        needle = "launch('hardware', '/usr/bin/osascript', ['-l', 'JavaScript', args[0], 'collect', capturedConfig], 6000,"
+        assert needle in failure_source
+        failure_source = failure_source.replace(needle, "launch('hardware', "+command+", 6000,")
+        script.write_text(failure_source)
+        failed = subprocess.run(sleep_argv, capture_output=True, text=True, timeout=5)
+        assert failed.returncode == 0, failed.stderr
+        failed_report = json.loads(failed.stdout)
+        assert failed_report['checkpoint_writes'] == 3 and failed_report['checkpoint_ordinary_writes'] == 0
+        failed_state = json.loads((root/'window-cache.json').read_text())
+        assert failed_state['events'] == [] and failed_state['gaps'][0]['reason'] == 'collection'
+        assert failed_state['current']['system'] == {'load_1m': None, 'load_5m': None, 'load_15m': None}
+
 server.shutdown()
-print('PASS: native queued activation and rapid Music metadata callbacks, slow-upload concurrency, private atomic checkpoint, kernel single-writer lock/release, failed-upload retention, hot privacy purge and immediate replacement, sleep cancels stale tasks before fresh wake observations')
+
+
+def cadence_case(kind):
+    # Run real elapsed-time native loops in separate temporary directories. A
+    # duplicate notification must not turn the idle 30-second heartbeat into a
+    # 10-second dirty checkpoint. No Music events leave this process.
+    with tempfile.TemporaryDirectory(prefix='macflare-cadence-'+kind+'-') as folder:
+        root = pathlib.Path(folder)
+        config = root/'config.json'
+        config.write_text(json.dumps({'profile': 'buffered', 'privacy': {
+            'active_app': False, 'running_apps': False, 'battery': False, 'system': False, 'music': True}}))
+        config.chmod(0o600)
+        cadence_source = (REPO/'agent/window-runtime.js').read_text()
+        cadence_source = cadence_source.replace('if (now - lastMusic >= 2000) requestMusic(now);', '/* Fixture supplies local notifications only. */')
+        cadence_source = cadence_source.replace('artwork(now); upload(now);', '/* No Apple or Worker requests in cadence fixtures. */')
+        setup = r'''
+  var fixtureSent = false, fixtureDuplicates = 0;
+  function fixtureMusic(title) {
+    observer.musicChanged($.NSNotification.notificationWithNameObjectUserInfo('com.apple.Music.playerInfo',undefined,
+      $({'Player State':'Playing',Name:title,Artist:'Fixture Artist'})));
+  }
+'''
+        if kind == 'idle':
+            setup += "  fixtureMusic('Unchanged Fixture Song');\n"
+        cadence_source = cadence_source.replace('  flush();\n  try {', setup+'\n  flush();\n  try {')
+        if kind == 'burst':
+            stimulus = r'''
+      if (!fixtureSent && now - began >= 400) {
+        for (var fixtureIndex = 0; fixtureIndex < 80; fixtureIndex += 1) fixtureMusic('Burst Song ' + fixtureIndex);
+        for (var duplicate = 0; duplicate < 200; duplicate += 1) fixtureMusic('Burst Song 79');
+        fixtureSent = true;
+      }
+'''
+            duration = '12'
+        else:
+            stimulus = "\n      fixtureMusic('Unchanged Fixture Song'); fixtureDuplicates += 1;\n"
+            duration = '32'
+        cadence_source = cadence_source.replace('lastLoop = now; lastUptime = uptime; finishTasks(now);', 'lastLoop = now; lastUptime = uptime; finishTasks(now);'+stimulus)
+        script = root/'cadence.js'; script.write_text(cadence_source)
+        argv = ['/usr/bin/osascript', '-l', 'JavaScript', str(script), str(REPO/'agent/runtime.js'), str(config), str(root/'unused-token'), str(root), 'observe', duration]
+        process = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            deadline = time.monotonic() + 2
+            while not (root/'window-cache.json').exists() and time.monotonic() < deadline:
+                assert process.poll() is None
+                time.sleep(0.05)
+            first = (root/'window-cache.json').read_bytes()
+            first_mtime = (root/'window-cache.json').stat().st_mtime_ns
+            time.sleep(2)
+            assert (root/'window-cache.json').stat().st_mtime_ns == first_mtime
+            assert (root/'window-cache.json').read_bytes() == first, 'ordinary notifications must not save before ten seconds'
+            stdout, stderr = process.communicate(timeout=int(duration)+3)
+            assert process.returncode == 0, stderr
+            report = json.loads(stdout)
+            cached = json.loads((root/'window-cache.json').read_text())
+            assert report['checkpoint_writes'] == 3 and report['checkpoint_ordinary_writes'] == 1, report
+            assert report['uploads'] == 0 and report['dropped_events'] == 0
+            if kind == 'burst':
+                tracks = [event['changes']['music']['track'] for event in cached['events'] if 'music' in event['changes']]
+                assert tracks == ['Burst Song '+str(index) for index in range(80)]
+                assert report['notifications'] == 280 and cached['seq'] == 80
+            else:
+                assert report['notifications'] > 100 and cached['seq'] == 1
+            return kind + ': ' + str(report['events']) + ' retained events, 1 ordinary checkpoint'
+        finally:
+            if process.poll() is None:
+                process.terminate(); process.communicate(timeout=3)
+
+
+with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+    cadence_results = list(pool.map(cadence_case, ['burst', 'idle']))
+print('PASS: native rapid callbacks, slow-upload concurrency, private checkpoint and kernel lock, failed-upload retention, forced saves for privacy/upload/sleep/wake/exit, cancelled stale tasks; '+ '; '.join(cadence_results))

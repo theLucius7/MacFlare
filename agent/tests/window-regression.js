@@ -3,6 +3,7 @@ ObjC.import('Foundation');
 function run(args) {
   var source = ObjC.unwrap($.NSString.stringWithContentsOfFileEncodingError(args[0], $.NSUTF8StringEncoding, null));
   var W = new Function(source + '\nreturn WindowBuffer;')();
+  var P = new Function(source + '\nreturn WindowPolicy;')();
   var start = 1800000000000, id = '11111111-2222-4333-8444-555555555555', passed = 0, batches = [];
   var snapshot = { schema_version: 1, collected_at: new Date(start).toISOString(), active_app: 'Finder', running_apps: ['Finder'],
     battery: { percent: 90, charging: false, power_source: 'battery' },
@@ -98,5 +99,51 @@ function run(args) {
   check(state.failures === 0 && state.next_upload_at === start + 300000, 'success resets retries to nominal cadence');
   W.result(state, start, false, 0);
   check(state.next_upload_at === start + 12000, 'retry jitter has a finite lower bound');
+  check(!P.checkpointDue(start, true, start + 9999) && P.checkpointDue(start, true, start + 10000), 'dirty changes wait at least ten seconds between ordinary checkpoints');
+  check(!P.checkpointDue(start, false, start + 29999) && P.checkpointDue(start, false, start + 30000), 'unchanged coverage persists once per thirty seconds');
+  var lastSaved = start, dirty = false, writes = 0;
+  state = make();
+  for (index = 1; index <= 250; index += 1) {
+    var at = start + index * 100;
+    dirty = W.observe(state, { active_app: 'Burst ' + index }, at) || dirty;
+    if (P.checkpointDue(lastSaved, dirty, at)) { writes += 1; lastSaved = at; dirty = false; }
+  }
+  check(state.events.length === 250 && state.events[249].seq === 250 && writes === 2,
+    'burst keeps every exact event while coalescing ordinary disk writes');
+  check(state.events[0].at === new Date(start + 100).toISOString() && state.events[249].at === new Date(start + 25000).toISOString(),
+    'checkpoint scheduling never changes event timestamps');
+  var loads = { load_1m: 1, load_5m: 1, load_15m: 1 };
+  function sample(value) { return { load_1m: value, load_5m: 1, load_15m: 1 }; }
+  check(!P.systemDue(loads, sample(1.1), start, start + 30000), 'small load movement is coalesced');
+  check(!P.systemDue(loads, sample(1.19), start, start + 60000), 'threshold remains against last recorded value');
+  check(P.systemDue(loads, sample(1.21), start, start + 90000), 'accumulated movement reaches recorded-value threshold');
+  check(P.systemDue(loads, sample(1.2), start, start + 30000), 'exact absolute threshold handles floating-point roundoff');
+  check(P.systemDue({ load_1m: 3.9, load_5m: 1, load_15m: 1 }, sample(4.1), start, start + 30000), '4.1 minus 3.9 counts as the exact 0.20 threshold');
+  check(!P.systemDue(loads, sample(1.01), start, start + 119999) && P.systemDue(loads, sample(1.01), start, start + 120000),
+    'small real changes are retained at the 120-second deadline');
+  check(!P.systemDue(loads, sample(1), start, start + 120000), 'deadline creates no event when values are unchanged');
+  var high = { load_1m: 10, load_5m: 10, load_15m: 10 };
+  check(!P.systemDue(high, { load_1m: 10.49, load_5m: 10, load_15m: 10 }, start, start + 30000) &&
+    P.systemDue(high, { load_1m: 10, load_5m: 10.5, load_15m: 10 }, start, start + 30000), 'relative five-percent threshold applies to every component');
+  check(P.systemDue(loads, { load_1m: 1, load_5m: null, load_15m: 1 }, start, start + 1) &&
+    P.systemDue({ load_1m: null, load_5m: 1, load_15m: 1 }, loads, start, start + 1), 'known/unknown transitions are immediate');
+  var sampled = W.copy(snapshot); sampled.battery.percent = 89; sampled.system = sample(1.01);
+  var delta = P.hardwareDelta(snapshot, sampled, { battery: true, system: true }, start, start + 30000);
+  check(delta.battery.percent === 89 && !delta.system, 'integer battery changes are independent of system coalescing');
+  sampled.battery = W.copy(snapshot.battery); sampled.battery.charging = true;
+  check(P.hardwareDelta(snapshot, sampled, { battery: true, system: true }, start, start + 30000).battery.charging === true, 'charging transitions remain exact');
+  sampled.battery.charging = false; sampled.battery.power_source = 'ac';
+  check(P.hardwareDelta(snapshot, sampled, { battery: true, system: true }, start, start + 30000).battery.power_source === 'ac', 'power-source transitions remain exact');
+  check(!Object.keys(P.hardwareDelta(snapshot, sampled, { battery: false, system: false }, start, start + 120000)).length,
+    'disabled device fields do not produce hardware events');
+  state = make(); W.observe(state, { system: sample(1.5) }, start + 30000); W.observe(state, { active_app: 'Later App' }, start + 60000);
+  check(P.lastSystemRecordedAt(state) === start + 30000, 'last system time derives from its latest event rather than app or coverage time');
+  var saved = W.restored(W.copy(state), 'fixture', start + 70000);
+  check(P.lastSystemRecordedAt(saved) === start + 30000, 'unchanged checkpoint version preserves derived system timing across recovery');
+  var unknown = W.copy(snapshot); unknown.system = { load_1m: null, load_5m: null, load_15m: null };
+  W.resume(saved, unknown, start + 70000);
+  check(P.lastSystemRecordedAt(saved) === start + 70000 && P.systemDue(saved.current.system, sample(1.01), start + 70000, start + 70001),
+    'resume resets the timing through an unknown event and accepts the next fresh metrics immediately');
+  capture(state); capture(saved);
   return JSON.stringify({ passed: passed, batches: batches });
 }

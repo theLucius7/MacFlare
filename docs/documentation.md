@@ -12,7 +12,8 @@
 | `docs/openapi.yaml` | API 的机器可读契约 |
 | `docs/.vitepress/dist/` | 构建产物，不进入 Git |
 | `worker/index.js` | `/api/*` 接口 |
-| `shared/playback.js` | 页面内存中的窗口播放状态机 |
+| `shared/playback.js` | 页面内存中的精确窗口播放状态机 |
+| `shared/presentation.js` | 首页普通切换的展示合并，不修改原始窗口 |
 | `docs/buffering.md` | 窗口时序、参数、恢复边界与模式迁移 |
 
 ## 本地开发

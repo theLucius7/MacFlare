@@ -193,6 +193,45 @@ var WindowBuffer = (function () {
     resume: resume, copy: copy, bytes: bytes, prune: prune, WINDOW_MS: WINDOW_MS, MAX_EVENTS: MAX_EVENTS };
 }());
 
+/* Scheduling decisions have no filesystem or application dependencies. */
+var WindowPolicy = (function () {
+  var SYSTEM_FIELDS = ['load_1m', 'load_5m', 'load_15m'];
+  function checkpointDue(lastFlush, dirty, now) {
+    return now - lastFlush >= (dirty ? 10000 : 30000);
+  }
+  function systemDue(recorded, sampled, recordedAt, now) {
+    var changed = false, significant = false;
+    SYSTEM_FIELDS.forEach(function (key) {
+      var before = recorded[key], after = sampled[key];
+      if (before === after) return;
+      changed = true;
+      if (before === null || after === null) { significant = true; return; }
+      var threshold = Math.max(0.20, Math.abs(before) * 0.05);
+      // Account only for binary floating-point roundoff at an exact threshold.
+      var roundoff = Number.EPSILON * Math.max(1, Math.abs(before), Math.abs(after)) * 4;
+      if (Math.abs(after - before) + roundoff >= threshold) significant = true;
+    });
+    return changed && (significant || now - recordedAt >= 120000);
+  }
+  function hardwareDelta(recorded, sampled, privacy, recordedAt, now) {
+    var delta = {};
+    // pmset supplies integer percentages. Preserve its values and charging/source
+    // transitions exactly, without creating additional precision or rounding.
+    if (privacy.battery && ['percent', 'charging', 'power_source'].some(function (key) {
+      return recorded.battery[key] !== sampled.battery[key];
+    })) delta.battery = sampled.battery;
+    if (privacy.system && systemDue(recorded.system, sampled.system, recordedAt, now)) delta.system = sampled.system;
+    return delta;
+  }
+  function lastSystemRecordedAt(state) {
+    for (var index = state.events.length - 1; index >= 0; index -= 1) {
+      if (Object.prototype.hasOwnProperty.call(state.events[index].changes, 'system')) return Date.parse(state.events[index].at);
+    }
+    return Date.parse(state.baseline.collected_at);
+  }
+  return { checkpointDue: checkpointDue, systemDue: systemDue, hardwareDelta: hardwareDelta, lastSystemRecordedAt: lastSystemRecordedAt };
+}());
+
 function run(args) {
   ObjC.import('Foundation'); ObjC.import('AppKit');
   ObjC.bindFunction('kill', ['int', ['int', 'int']]);
@@ -211,6 +250,7 @@ function run(args) {
   var directory = noUpload ? temporary : ObjC.unwrap($(configPath).stringByDeletingLastPathComponent);
   var checkpoint = directory + '/window-cache.json';
   var state, musicRevision = 0, lastLoop = began, lastUptime = Number($.NSProcessInfo.processInfo.systemUptime), lastFlush = 0, lastConfig = began, lastHardware = 0, lastMusic = 0;
+  var dirty = false, checkpointWrites = 0, ordinaryCheckpointWrites = 0, systemRecordedAt = began;
   var workspace = $.NSWorkspace.sharedWorkspace, tasks = {}, observations = 0, notifications = 0, uploads = 0;
   var artworkQueue = [], artworkCache = {}, recentMusicKeys = [], asleep = false, terminated = false;
   var lockDescriptor = -1;
@@ -222,9 +262,11 @@ function run(args) {
       Number(ObjC.unwrap(attributes.objectForKey($.NSFilePosixPermissions))) === 384 &&
       Number(ObjC.unwrap(attributes.objectForKey($.NSFileOwnerAccountID))) === Number($.getuid());
   }
-  function flush() {
+  function flush(ordinary) {
     if (!privatePath(checkpoint)) throw new Error('Window cache must be a private regular file.');
     native.write(checkpoint, JSON.stringify(state)); lastFlush = Date.now();
+    dirty = false; checkpointWrites += 1;
+    if (ordinary === true) ordinaryCheckpointWrites += 1;
   }
   function apps() {
     var changes = {};
@@ -277,6 +319,7 @@ function run(args) {
   } catch (_) {}
   if (!state) state = initial(began);
   else WindowBuffer.resume(state, initial(began).current, began);
+  systemRecordedAt = WindowPolicy.lastSystemRecordedAt(state);
   // Private history never survives a configuration change, including endpoint and blocklist.
   function reset(now, reason) {
     state = initial(now); musicRevision += 1;
@@ -284,14 +327,18 @@ function run(args) {
     Object.keys(tasks).forEach(function (key) { stop(tasks[key]); }); tasks = {};
     native.write(capturedConfig, fingerprint);
     lastHardware = 0; lastMusic = 0;
+    systemRecordedAt = WindowPolicy.lastSystemRecordedAt(state);
     if (!reason) state.next_upload_at = now;
     flush();
   }
   function observed(changes, now) {
     now = now || Date.now();
     if (now < state.coverage_at) reset(now, 'clock');
+    var previousSystem = JSON.stringify(state.current.system);
     var changed = WindowBuffer.observe(state, changes, now); observations += 1;
-    if (changed || now - lastFlush >= 2000) flush();
+    if (changed) dirty = true;
+    if (JSON.stringify(state.current.system) !== previousSystem) systemRecordedAt = now;
+    return changed;
   }
   function stop(job) {
     if (job.task.running) {
@@ -305,7 +352,7 @@ function run(args) {
     task.launchPath = executable; task.arguments = $(argumentsList);
     task.standardOutput = pipe; task.standardError = $.NSFileHandle.fileHandleForWritingAtPath('/dev/null');
     task.launch;
-    tasks[key] = { task: task, pipe: pipe, deadline: Date.now() + timeout, done: done };
+    tasks[key] = { task: task, pipe: pipe, started: Date.now(), deadline: Date.now() + timeout, done: done };
     return true;
   }
   function finishTasks(now) {
@@ -320,7 +367,14 @@ function run(args) {
         if (Number(data.length) <= 65536) output = ObjC.unwrap($.NSString.alloc.initWithDataEncoding(data, $.NSUTF8StringEncoding)) || '';
       } catch (_) {}
       try { job.done(!timedOut && Number(job.task.terminationStatus) === 0, output.trim(), now); } catch (_) {
-        WindowBuffer.gap(state, now, now, 'collection');
+        if (key === 'music' || key === 'hardware') {
+          var missing = {};
+          if (key === 'music') missing.music = native.unavailable();
+          if (key === 'hardware' && config.privacy.battery) missing.battery = { percent: null, charging: null, power_source: 'unknown' };
+          if (key === 'hardware' && config.privacy.system) missing.system = { load_1m: null, load_5m: null, load_15m: null };
+          observed(missing, now); WindowBuffer.gap(state, job.started, now, 'collection');
+        }
+        flush();
       }
     });
   }
@@ -361,9 +415,8 @@ function run(args) {
         if (config.privacy.system) missing.system = { load_1m: null, load_5m: null, load_15m: null };
         observed(missing, finished); WindowBuffer.gap(state, lastHardware, finished, 'collection'); flush(); return;
       }
-      var data = JSON.parse(output), delta = {};
-      if (config.privacy.battery) delta.battery = data.battery;
-      if (config.privacy.system) delta.system = data.system;
+      var data = JSON.parse(output);
+      var delta = WindowPolicy.hardwareDelta(state.current, data, config.privacy, systemRecordedAt, finished);
       observed(delta, finished);
     });
   }
@@ -384,15 +437,19 @@ function run(args) {
       recentMusicKeys = recentMusicKeys.filter(function (key) { return key !== entry.key; }); recentMusicKeys.push(entry.key);
       while (recentMusicKeys.length > 64) delete artworkCache[recentMusicKeys.shift()];
       if (value) {
+        var metadataChanged = false;
         // Artwork is derived metadata: preserve capture timestamps and source transitions.
         [state.baseline].concat(state.events.map(function (event) { return event.changes; })).forEach(function (snapshot) {
-          if (snapshot.music && validSong(snapshot.music) && songKey(snapshot.music) === entry.key) Object.assign(snapshot.music, value);
+          if (snapshot.music && validSong(snapshot.music) && songKey(snapshot.music) === entry.key &&
+            (snapshot.music.artwork_url !== value.artwork_url || snapshot.music.track_url !== value.track_url)) {
+            Object.assign(snapshot.music, value); metadataChanged = true;
+          }
         });
         if (validSong(state.current.music) && songKey(state.current.music) === entry.key) {
           observed({ music: Object.assign({}, state.current.music, value) }, finished);
         }
         WindowBuffer.prune(state);
-        flush();
+        if (metadataChanged) dirty = true;
       }
     });
   }
@@ -458,11 +515,13 @@ function run(args) {
       if (now < previous) reset(now, 'clock');
       else {
         var awake = initial(now).current;
-        observed(awake, now); WindowBuffer.gap(state, previous, now, 'sleep'); flush();
+        observed(awake, now); WindowBuffer.gap(state, previous, now, 'sleep');
       }
       if (now - previous >= 300000) state.next_upload_at = now;
+      systemRecordedAt = WindowPolicy.lastSystemRecordedAt(state);
       lastLoop = now; lastUptime = Number($.NSProcessInfo.processInfo.systemUptime);
       lastMusic = 0; lastHardware = 0;
+      flush();
     } }
   } });
   var observer = $[observerName].alloc.init, center = workspace.notificationCenter;
@@ -480,7 +539,7 @@ function run(args) {
       var uptime = Number($.NSProcessInfo.processInfo.systemUptime);
       if (now < lastLoop || (!asleep && Math.abs((now - lastLoop) - (uptime - lastUptime) * 1000) > 5000)) reset(now, 'clock');
       else if (!asleep && now - lastLoop > 5000) {
-        var previous = state.coverage_at; observed(apps(), now); WindowBuffer.gap(state, previous, now, 'collection');
+        var previous = state.coverage_at; observed(apps(), now); WindowBuffer.gap(state, previous, now, 'collection'); flush();
       }
       lastLoop = now; lastUptime = uptime; finishTasks(now);
       if (now - lastConfig >= 2000) {
@@ -493,6 +552,7 @@ function run(args) {
         if (now - lastMusic >= 2000) requestMusic(now);
         if (now - lastHardware >= 30000) hardware(now);
         artwork(now); upload(now);
+        if (WindowPolicy.checkpointDue(lastFlush, dirty, now)) flush(true);
       }
       $.NSRunLoop.currentRunLoop.runUntilDate($.NSDate.dateWithTimeIntervalSinceNow(0.2));
     }
@@ -503,5 +563,6 @@ function run(args) {
   }
   return JSON.stringify({ duration_seconds: (Date.now() - began) / 1000, observations: observations,
     notifications: notifications, events: state.events.length, uploads: uploads,
-    checkpoint_bytes: WindowBuffer.bytes(state), dropped_events: state.dropped_events });
+    checkpoint_bytes: WindowBuffer.bytes(state), checkpoint_writes: checkpointWrites,
+    checkpoint_ordinary_writes: ordinaryCheckpointWrites, dropped_events: state.dropped_events });
 }

@@ -9,7 +9,7 @@
 | `~/Library/Application Support/MacFlare/agent/` | 安装脚本复制的 Bash 与原生 JXA 运行文件 |
 | `~/Library/Application Support/MacFlare/last-result.json` | 最近一次上传结果，不含快照或令牌 |
 | `~/Library/Application Support/MacFlare/artwork-cache.json` | v1 快照模式的当前单曲封面匹配缓存 |
-| `~/Library/Application Support/MacFlare/window-cache.json` | buffered 最近 900 秒的私有窗口检查点，包含状态变化 |
+| `~/Library/Application Support/MacFlare/window-cache.json` | buffered 时间跨度最多 900 秒的私有窗口检查点，可能落后当前内存窗口 |
 | `~/Library/Application Support/MacFlare/window-lock` | buffered 单实例的内核文件锁 |
 | `~/Library/LaunchAgents/com.macflare.agent.plist` | 用户级后台任务 |
 
@@ -109,11 +109,11 @@ buffered 只为近期曲目维护最多 64 项内存封面匹配缓存：成功 
 
 ## 调度和诊断
 
-所有模式都生成用户图形会话的 `RunAtLoad: true` LaunchAgent。buffered 使用 `--watch`、`KeepAlive` 与 15 秒 `ThrottleInterval` 管理常驻 JXA；内核文件锁避免多个采集器同时运行。应用／Music 通知优先、Music 2 秒异步兜底采样，硬件 30 秒；只记录字段变化，每 300 秒上传最近 900 秒窗口。eco／realtime 则用 `StartInterval` 每 120／30 秒执行一次快照。
+所有模式都生成用户图形会话的 `RunAtLoad: true` LaunchAgent。buffered 使用 `--watch`、`KeepAlive` 与 15 秒 `ThrottleInterval` 管理常驻 JXA；内核文件锁避免多个采集器同时运行。应用／Music 通知优先、Music 2 秒异步兜底采样，硬件 30 秒；每 300 秒上传最近 900 秒窗口。电量按整数百分比或充电／供电状态变化记录；负载对比最后已记录值，任一项变化达到 `max(0.20, |旧值| × 5%)` 时记录整个对象，否则较小真变化在距上次记录达到 120 秒后，由下一次成功采样记录最新值，通常约 2 分钟，可能多一个采样周期与任务延迟；null 转换立即记录。eco／realtime 则用 `StartInterval` 每 120／30 秒执行一次快照。
 
-窗口检查点在权限 700 的安装目录中以 600 权限原子写入，随采集更新；恢复同一配置、仍在 900 秒保留范围的检查点时记录 `restart` 缺口，并保留原上传计划（限制在当前时间至 300 秒后），不会每次重启都重新等满 5 分钟。休眠、采集停顿等标记正长度缺口；时钟回拨可重建会话，容量溢出可能推进起点并增加丢弃计数，无法观测的时间不补造数据。配置变化会清队列、换会话。[完整数据与恢复规则](buffering.md)
+应用／Music 的已观测语义变化立即进入有序内存窗口；普通窗口检查点在权限 700 的安装目录中以 600 权限原子写入，最多每 10 秒合并一次，无变化时每 30 秒保存覆盖心跳。启动、睡眠、隐私变化和上传前后等边界立即保存；意外崩溃可能损失最近约 10 秒未落盘的普通变化。恢复同一配置、仍在 900 秒保留范围的检查点时记录 `restart` 缺口，并保留原上传计划（限制在当前时间至 300 秒后），不会每次重启都重新等满 5 分钟。休眠、采集停顿等标记正长度缺口；时钟回拨可重建会话，容量溢出可能推进起点并增加丢弃计数，无法观测的时间不补造数据。配置变化会清队列、换会话。[完整数据与恢复规则](buffering.md)
 
-休眠或注销不会为了维持上传主动唤醒机器。没有任意 `interval` 配置键，手动编辑 plist 会在重装时被覆盖。每次成功集合包写一个 KV 键，正常单设备 buffered 每日定时约 288 次；不是账户级配额上限。
+休眠或注销不会为了维持上传主动唤醒机器。采集阈值、10 秒检查点和 2 秒首页展示都是固定策略，没有对应的新配置键，也没有任意 `interval` 配置键，手动编辑 plist 会在重装时被覆盖。每次成功集合包写一个 KV 键，正常单设备 buffered 每日定时约 288 次；不是账户级配额上限。
 
 可在独立临时目录中观察原生采集器，不上传实际活动；只输出统计，结束删除临时窗口：
 

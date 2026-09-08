@@ -107,7 +107,7 @@ npm run deploy
 
 安装保留已有 endpoint、token、隐私和追加屏蔽名单，替换 Agent 代码并改用常驻调度。`STATUS_TTL_SECONDS` 仅控制 v1 快照，不改变 v2 的窗口策略。启动新会话后首页正常暖机约 7 分钟，已有旧快照或 KV 传播可能影响初次显示。
 
-用 `/api/timeline` 检查 `mode: "window"`、`session_id`、`batch_seq`、`window_end`，等待两个 5 分钟周期确认序号与窗口前进；观察期间切换应用或歌曲，检查这些已观测变化进入同一包并依时间回放。原有 `/api/now`、`/api/music`、应用、设备和徽章在 buffered 下返回延时切片，缺少对应覆盖时为 offline。[时序和恢复](buffering.md)
+用 `/api/timeline` 检查 `mode: "window"`、`session_id`、`batch_seq`、`window_end`，等待两个 5 分钟周期确认序号与窗口前进；观察期间切换应用或歌曲，检查这些已观测应用／Music 变化进入同一包并依时间回放；首页普通变化按 2 秒合并展示，精确顺序应核对时间线而非只看每次画面切换。原有 `/api/now`、`/api/music`、应用、设备和徽章在 buffered 下返回延时切片，缺少对应覆盖时为 offline。[时序和恢复](buffering.md)
 
 回退到快照模式前设置对应 Worker TTL（eco 180 秒、realtime 60 秒），再运行 `scripts/install.sh --profile eco` 或 `--profile realtime`。buffered 配置会拒绝 `--once` 和默认单次推送，避免 v1 覆盖窗口；手动预览使用 `--print`，原生采集统计使用 `--observe 30`。
 
@@ -147,7 +147,7 @@ npm run deploy
 1. `GET /api/health` 返回 `{"ok":true,"service":"macflare"}`。这只证明 Worker 路由可以响应，不能证明 KV 或 Mac 正常。
 2. 无 Bearer 的 `POST /api/update` 返回 401，确保未开放匿名写入。
 3. buffered 检查 `/api/timeline` 与私有 `last-result.json` 的批次结果；快照模式才使用手动 `--once`。核对允许公开的电量、应用及时间。KV 跨位置传播可能延迟，不应每秒密集重试。
-4. 观察至少两个后台上传周期，确认 `updated_at` 和 buffered 的 `batch_seq`、`window_end` 前进；首次暖机之后检查实际变化顺序，一次手动成功不能证明 LaunchAgent 有效。
+4. 观察至少两个后台上传周期，确认 `updated_at` 和 buffered 的 `batch_seq`、`window_end` 前进；首次暖机之后检查时间线中的变化顺序，并检查首页普通切换的 2 秒合并与隐私／断档立即清除。一次手动成功不能证明 LaunchAgent 有效。
 5. Music 正在播放时，分别验证手动采集与后台周期中的歌名、歌手；升级 Agent 后还可检查成对封面 URL，未匹配时为空不影响其他状态；暂停、退出和拒绝授权分别检查降级语义。后台自动化授权主体可能显示为 **bash**，需用户允许它控制 Music，不能用前台成功代替后台验证。见 [Music 授权排查](troubleshooting.md#music-状态为空或不可用)。
 6. 停止后台任务，等待超过响应中的 `expires_at`（buffered 为窗口末尾加 600 秒，eco 约 180 秒，realtime 60 秒），再直接请求 `/api/now`，应为 offline。GitHub 徽章缓存不用于此验收。
 7. 按需重新安装启用后台，并记录实际验证日期、版本和未解决问题。

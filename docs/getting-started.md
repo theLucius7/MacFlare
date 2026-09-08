@@ -51,6 +51,6 @@ curl -sS https://<worker>.<subdomain>.workers.dev/api/timeline
 launchctl print "gui/$(id -u)/com.macflare.agent"
 ```
 
-确认 `/api/timeline` 返回 `mode: "window"`、`window.baseline` 与 `window.events` 包含允许公开的状态；跨过两个 5 分钟上传周期检查 `batch_seq` 和 `window_end` 前进。首次正常约在启动 7 分钟后开始播放；首包到达前可能显示离线，取得窗口后才显示暖机倒计时。首页依事件时间展示应用和歌曲切换，原有 `/api/music` 等接口显示对应延时切片。KV 可能有传播延迟，不需要每秒重试。[时序、缺口与验收边界](buffering.md)
+确认 `/api/timeline` 返回 `mode: "window"`、`window.baseline` 与 `window.events` 包含允许公开的状态；跨过两个 5 分钟上传周期检查 `batch_seq` 和 `window_end` 前进。首次正常约在启动 7 分钟后开始播放；首包到达前可能显示离线，取得窗口后才显示暖机倒计时。首页按时间回放，再将短时间普通应用／歌曲切换按约 2 秒节奏合并显示；时间线中的已记录事件不因此删除。原有 `/api/music` 等接口显示对应延时切片。KV 可能有传播延迟，不需要每秒重试。[时序、缺口与验收边界](buffering.md)
 
 下一步：[嵌入博客或 README](integrations.md) · [节省免费额度](quotas.md) · [停止和卸载](configuration.md#停止与卸载)
