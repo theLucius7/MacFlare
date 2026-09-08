@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker, { handleRequest } from "../worker/index.js";
+import worker, { handleRequest as workerRequest } from "../worker/index.js";
 
 const NOW = Date.parse("2026-09-08T10:00:00.000Z");
 const TOKEN = "test-secret-0123456789-abcdefghijklmnop";
@@ -8,6 +8,13 @@ const ARTWORK = {
   artwork_url: "https://is1-ssl.mzstatic.com/image/thumb/example/100x100bb.jpg",
   track_url: "https://music.apple.com/us/album/example/123?i=456",
 };
+
+// These fixtures already supply a synthetic absolute time. Use the same fixed
+// time for elapsed work unless a test explicitly supplies an advancing clock;
+// otherwise a real CI millisecond can invalidate an expires-at-minus-one check.
+function handleRequest(request, env, now = NOW, dependencies = {}) {
+  return workerRequest(request, env, now, { now: () => now, ...dependencies });
+}
 
 function sample() {
   return {
@@ -1195,6 +1202,35 @@ test("slow batch body reads use completion time for freshness and absolute KV ex
     } else {
       assert.equal(result.status, 400);
       assert.equal(state.calls.length, 0);
+    }
+  }
+});
+
+
+test("all snapshot routes expire when a one-millisecond KV read reaches the exact deadline", async () => {
+  for (const elapsed of [0, 1, 2]) {
+    for (const path of ["/api/now", "/now", ...SLICES, "/api/timeline", "/api/badge.svg", "/badge.svg"]) {
+      const { env, calls } = setup();
+      await handleRequest(request("/api/update"), env, NOW);
+      let time = NOW + 59_999;
+      const get = env.STATUS_KV.get;
+      env.STATUS_KV.get = async (...args) => {
+        const stored = await get(...args);
+        time += elapsed;
+        return stored;
+      };
+      const response = await handleRequest(request(path), env, NOW + 59_999, { now: () => time });
+      assert.equal(response.status, 200);
+      if (path.endsWith(".svg")) {
+        const svg = await response.text();
+        assert.match(svg, elapsed === 0 ? /A song/u : /offline/u, `${path} elapsed ${elapsed}`);
+        if (elapsed > 0) assert.doesNotMatch(svg, /A song/u);
+      } else {
+        const body = await response.json();
+        if (elapsed === 0) assert.equal(body.status, "online", path);
+        else assert.deepEqual(body, { status: "offline" }, `${path} elapsed ${elapsed}`);
+      }
+      assert.equal(calls.filter((call) => call.method === "get").length, 1);
     }
   }
 });
