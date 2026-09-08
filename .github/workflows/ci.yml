@@ -35,6 +35,10 @@ jobs:
           /bin/bash -n scripts/install.sh
           /bin/bash -n scripts/uninstall.sh
       - name: Check native JavaScript syntax
-        run: node --check agent/runtime.js
+        run: |
+          node --check agent/runtime.js
+          node --check agent/window-runtime.js
       - name: Run macOS native smoke checks
-        run: python3 agent/tests/native-smoke.py
+        run: |
+          python3 agent/tests/native-smoke.py
+          python3 agent/tests/window-native.py

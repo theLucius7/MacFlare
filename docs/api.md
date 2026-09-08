@@ -1,13 +1,15 @@
-# HTTP API v1
+# HTTP API v1 / v2
 
-协议版本为 `schema_version: 1`，Worker 基础地址是部署输出的 HTTPS URL。本文示例都是合成数据。机器可读契约见 [OpenAPI 3.1](openapi.yaml)。
+v1 为单个快照，v2 为有界滑动窗口；Worker 基础地址是部署输出的 HTTPS URL。本文示例都是合成数据。机器可读契约见 [OpenAPI 3.1](openapi.yaml)。
 
 ## 路由
 
 | 方法 | 路径 | 鉴权 | 功能 |
 | --- | --- | --- | --- |
+| `POST` | `/api/batch` | `Authorization: Bearer <INGEST_TOKEN>` | 验证并覆盖完整滑动窗口，512 KiB 上限 |
+| `GET` | `/api/timeline` | 无 | 获取可回放窗口、缺口与播放策略；兼容旧快照 |
 | `POST` | `/api/update` | `Authorization: Bearer <INGEST_TOKEN>` | 验证并覆盖当前快照 |
-| `GET` | `/api/now` | 无 | 一次读取完整原始快照，组合页面优先使用 |
+| `GET` | `/api/now` | 无 | 一次读取完整状态切片；buffered 为延时 7 分钟的投影 |
 | `GET` | `/api/music` | 无 | 音乐状态、歌名、歌手及可空的 Apple 封面与歌曲链接 |
 | `GET` | `/api/apps/active` | 无 | 前台应用名称及可空的原生图标地址 |
 | `GET` | `/api/apps/running` | 无 | 运行应用及原生图标地址，未采集时为 `null` |
@@ -20,9 +22,87 @@
 
 没有尾斜线别名；`/api/now/` 是未知路径。只有图标接口支持 `HEAD`，包括四个分类接口在内的状态、写入、徽章与健康接口均返回 405。查询参数不改变响应。JSON 使用 `application/json; charset=utf-8`，SVG 使用 `image/svg+xml; charset=utf-8`，图标使用 `image/png`。
 
-旧 `/update`、`/now`、`/badge.svg`、`/health` 保留兼容且不重定向，新集成使用 `/api/*`。四个新增分类接口仅提供表中的 `/api/*` 路径，没有 `/music`、`/apps/active` 等根路径别名。根路径 `/` 为状态主页，文档 API 参考页面位于 `/api`。
+旧 `/update`、`/now`、`/badge.svg`、`/health` 保留兼容且不重定向，新集成使用 `/api/*`。批量、时间线与四个分类接口仅提供表中的 `/api/*` 路径，没有 `/music`、`/apps/active` 等根路径别名。根路径 `/` 为状态主页，文档 API 参考页面位于 `/api`。
 
-完整页面需要多类状态时，**每轮只请求一次 `/api/now`**。四个分类接口供独立小组件按需选用，各自一次 GET 都读取一次 KV；并行请求不会合并读取，也不能保证读到同一个快照。分类接口只整理同一设备快照，不写 KV。[调用示例](integrations.md#按需选择接口) · [读取额度](quotas.md#读取也有额度)
+动态播放页面每 60 秒只请求一次 `/api/timeline`，按时间在内存播放；简单页面需要多类状态时，**每轮只请求一次 `/api/now`**。四个分类接口供独立小组件按需选用，各自一次 GET 都读取一次 KV；并行请求不会合并读取，也不能保证读到同一个快照。分类接口只整理同一设备快照，不写 KV。[调用示例](integrations.md#按需选择接口) · [读取额度](quotas.md#读取也有额度)
+
+## POST /api/batch
+
+使用与 `/api/update` 相同的 Bearer 接收令牌。请求必须是未压缩 UTF-8 JSON，`Content-Type: application/json`，最大 **524,288 字节（512 KiB）**。所有层级拒绝未知字段。每个完整包一次 KV 写入，不按事件逐个写入；不需要 Worker 合并上一包。
+
+| 字段 | 类型与限制 | 含义 |
+| --- | --- | --- |
+| `schema_version` | 固定 `2` | 窗口协议 |
+| `session_id` | 小写 UUID 形式字符串 | 本机会话；隐私配置变化或时钟异常可开启新会话 |
+| `batch_seq` | 正安全整数 | 会话内批次序号；客户端用来拒绝旧批次回退 |
+| `generated_at` | UTC 毫秒时间 | 包生成时间，与服务器接收时间相差最多 120 秒 |
+| `window_start`、`window_end` | UTC 毫秒时间 | 有效观测范围，起点不晚于终点，跨度不超过 900 秒 |
+| `baseline` | 完整 v1 快照 | `collected_at` 必须精确等于 `window_start`，其余使用 v1 字段规则 |
+| `events` | 数组，最多 2048 项 | 每项 `{seq, at, changes}`；空数组合法 |
+| `gaps` | 数组，最多 128 项 | 每项 `{start_at, end_at, reason}`；明确无法观察的区间 |
+| `dropped_events` | 非负安全整数 | 因容量等原因丢弃的事件计数，不代表没有其他未观测操作 |
+
+v2 时间统一为 `YYYY-MM-DDTHH:mm:ss.sssZ`，精确保留三位毫秒。`window_end <= generated_at`，两者相差最多 30 秒。安全整数上限为 `9007199254740991`。示例中的时间必须更新后才能用于真实请求。
+
+事件 `seq` 为正安全整数、严格递增；`at` 在窗口内且非降序，同一时间的多个事件按 `seq` 排列。`changes` 非空，仅可含 `active_app`、`running_apps`、`battery`、`system`、`music`，使用 v1 对应字段类型，整个字段替换；对象内部不做深合并。例如换歌时 `music` 必须一起提供 `state`、`track`、`artist`，旧封面 URL 不会自动继承。关闭 `running_apps` 后通过新会话中省略该基线字段表示，不以增量 null 删除。
+
+缺口 `reason` 只能是 `sleep`、`restart`、`collection`、`overflow`、`clock`。每项必须满足 `window_start <= start_at < end_at <= window_end`，按时间排序且互不重叠；回放中使用半开区间 `[start_at, end_at)`。消费端不能把缺口里的上一条状态继续当成已观测状态。
+
+下面是一份合成完整包：
+
+```json
+{
+  "schema_version": 2,
+  "session_id": "12345678-1234-4321-8123-123456789abc",
+  "batch_seq": 2,
+  "generated_at": "2026-09-09T10:05:00.000Z",
+  "window_start": "2026-09-09T10:00:00.000Z",
+  "window_end": "2026-09-09T10:05:00.000Z",
+  "baseline": {
+    "schema_version": 1,
+    "collected_at": "2026-09-09T10:00:00.000Z",
+    "active_app": "Visual Studio Code",
+    "battery": {"percent":78,"charging":false,"power_source":"battery"},
+    "system": {"load_1m":1.5,"load_5m":1.8,"load_15m":1.6},
+    "music": {"state":"playing","track":"Example Song A","artist":"Example Artist"}
+  },
+  "events": [
+    {"seq":1,"at":"2026-09-09T10:01:00.000Z","changes":{"active_app":"Safari"}},
+    {"seq":2,"at":"2026-09-09T10:02:00.000Z","changes":{"music":{"state":"playing","track":"Example Song B","artist":"Example Artist"}}}
+  ],
+  "gaps": [],
+  "dropped_events": 0
+}
+```
+
+成功返回与旧写入一致的 `{ok, updated_at, expires_at}`。`updated_at` 是服务器接收时间，`expires_at = window_end + 600 秒`；读取、迟到或重发旧窗口不会改变这个截止时间。KV 使用绝对秒级 `expiration` 向上取整，平台物理期限最多比 API 毫秒截止多不足 1 秒。KV 只保存一个当前包，覆盖写没有跨请求事务性版本仲裁；应使用单个受锁保护的 Agent，消费端仍须拒绝已见过会话内的旧序号。短期恢复依靠新包覆盖最近窗口，不承诺无限离线补传。[窗口时序](buffering.md)
+
+## GET /api/timeline
+
+每次 GET 一次 KV 读取，无写入。有效 v2 返回：
+
+```json
+{
+  "status": "online",
+  "mode": "window",
+  "server_time": "2026-09-09T10:07:00.000Z",
+  "updated_at": "2026-09-09T10:05:01.000Z",
+  "expires_at": "2026-09-09T10:15:00.000Z",
+  "policy": {
+    "upload_interval_seconds": 300,
+    "window_seconds": 900,
+    "playback_delay_seconds": 420,
+    "poll_interval_seconds": 60,
+    "sample_interval_seconds": 2,
+    "metrics_interval_seconds": 30
+  },
+  "window": {"schema_version": 2}
+}
+```
+
+此响应示例的 `window` 为便于阅读而省略内容，真实返回完整 v2 包（包含上一节所有字段）。`server_time` 用于客户端校准播放时钟；`online` 表示窗口仍有效，不表示当前目标播放时刻已有覆盖。首次暖机、缺口和覆盖耗尽由客户端结合窗口判断。[推荐播放行为](buffering.md#缓存故障与恢复)
+
+有效 v1 时返回原 `/api/now` 在线快照，加上 `mode: "snapshot"` 与 `server_time`；原 v1 接口自身不增加这两个字段。没有有效记录时精确返回 `{"status":"offline"}`。KV 错误为 503；断网或暂时旧读取时，播放器可继续使用已校验、未过期且覆盖播放头的内存窗口，不能无限延长最后状态。
 
 ## POST /api/update
 
@@ -76,9 +156,11 @@ Mac Agent 使用公开歌名和歌手查询 Apple，并严格匹配曲目后上�
 }
 ```
 
-`updated_at` 是服务器接收时间；`expires_at` 为该记录的服务端截止时间，eco 通常为接收时间加 180 秒、realtime 为加 60 秒；读取时也受当前服务器策略限制。写入完成后才返回成功，每次成功请求覆盖 KV 的 `now` 键并刷新 TTL，不追加历史。不要发送客户端 `updated_at`、`expires_at` 或 TTL 字段。建议由自带 Agent 处理安全读令牌和上传，避免手写含 Secret 的 shell 命令。
+`updated_at` 是服务器接收时间；`expires_at` 为该记录的服务端截止时间，eco 通常为接收时间加 180 秒、realtime 为加 60 秒；读取时也受当前服务器策略限制。写入完成后才返回成功，每次成功 v1 请求覆盖 KV 的 `now` 键并刷新快照 TTL，不追加历史；这个键也用于 v2。自带 Agent 在 buffered 配置下拒绝 `--once`／默认单次推送，但 API 为兼容保留 v1；外部客户端仍不应并发混用两种写入模式。不要发送客户端 `updated_at`、`expires_at` 或 TTL 字段。建议由自带 Agent 处理安全读令牌和上传，避免手写含 Secret 的 shell 命令。
 
 ## GET /api/now
+
+存储为 v2 时按服务器时间减 420 秒生成兼容 v1 字段的切片；下面示例为旧 v1 快照。v2 在线响应额外包含 `playback: {mode: "delayed", delay_seconds: 420, at, window_end}`。其中 `playback.at` 是目标播放时刻，`collected_at` 是最后应用的事件时刻（没有事件时为基线时刻）；两者含义不同。此时 `expires_at = window_end + 420 秒`，比时间线的保留期限早，因为窗口末尾之后没有可投影状态。目标时刻尚未覆盖、落在缺口或超过窗口时返回 offline。
 
 新鲜快照返回 HTTP 200，顶层增加 `status`、`updated_at` 和 `expires_at`：
 
@@ -111,7 +193,7 @@ KV 不可用与没有记录不同：存储访问失败返回 503。客户端应�
 
 ## 分类状态接口
 
-以下四个接口在线时共有 `status: "online"`、`updated_at`、`expires_at`、`collected_at`，时间含义与 `/api/now` 相同。没有新鲜快照时，HTTP 200 正文精确为 `{"status":"offline"}`，不附带对应数据字段。KV 访问失败返回 503；不要把失败当成离线。
+以下四个接口在线时共有 `status: "online"`、`updated_at`、`expires_at`、`collected_at`，时间含义与 `/api/now` 相同。v2 投影时同样附带 `playback`，字段取自延时切片，暖机／缺口返回 offline；`expires_at` 为窗口末尾加 420 秒。没有新鲜快照时，HTTP 200 正文精确为 `{"status":"offline"}`，不附带对应数据字段。KV 访问失败返回 503；不要把失败当成离线。
 
 全部公开、无需 Bearer，支持 GET 和 OPTIONS 204，HEAD 返回 405；状态响应使用 `no-store` 与 CORS `*`。每次 GET 只读取一次 KV，不写入或刷新快照。`/api/now` 保留原有必需字段与类型；Agent 上报 URL 时，`music` 增加这两个可选字段，未上报时仍省略。图标对象字段仅出现在对应应用分类接口中。
 
@@ -191,7 +273,7 @@ Worker 不向 Apple 发起请求，不使用 Cache API 缓存封面，也不刷�
 
 ## GET /api/badge.svg
 
-从同一新鲜度规则读取快照。在线并且 Music 正在播放且有曲目时显示歌曲与歌手，否则显示前台应用，或通用 `online`；离线显示 `offline`。长文本会截短，并按 XML 语境转义。存储错误返回 JSON 503，消费端应能显示图片加载失败的替代文本。
+从同一新鲜度规则读取状态；v2 使用相同的延时切片。在线并且 Music 正在播放且有曲目时显示歌曲与歌手，否则显示前台应用，或通用 `online`；离线显示 `offline`。长文本会截短，并按 XML 语境转义。存储错误返回 JSON 503，消费端应能显示图片加载失败的替代文本。
 
 ## GET /api/health
 

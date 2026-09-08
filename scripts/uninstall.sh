@@ -22,7 +22,8 @@ esac
 }
 
 /bin/launchctl bootout "gui/$(/usr/bin/id -u)/com.macflare.agent" >/dev/null 2>&1 || :
-/bin/rm -f -- "$PLIST" "$SUPPORT/agent/macflare.sh" "$SUPPORT/agent/runtime.js"
+/bin/rm -f -- "$PLIST" "$SUPPORT/agent/macflare.sh" "$SUPPORT/agent/runtime.js" "$SUPPORT/agent/window-runtime.js"
+/bin/rm -f -- "$SUPPORT/window-cache.json" "$SUPPORT/artwork-cache.json" "$SUPPORT/window-lock"
 /bin/rmdir -- "$SUPPORT/agent" 2>/dev/null || :
 if [ "$PURGE" = true ]; then
   /bin/rm -f -- "$SUPPORT/config.json" "$SUPPORT/token" "$SUPPORT/last-result.json"
@@ -31,4 +32,4 @@ if [ "$PURGE" = true ]; then
 else
   echo 'MacFlare stopped and agent removed. Configuration and token retained; use --purge to remove them.'
 fi
-echo 'The public status expires within 60 seconds of the last accepted update.'
+echo 'Public state expires automatically according to the deployed profile; buffered windows expire at most 10 minutes after the last observation.'

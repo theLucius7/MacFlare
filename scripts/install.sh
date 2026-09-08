@@ -13,15 +13,16 @@ START=true
 
 usage() {
   cat <<'EOF'
-Usage: scripts/install.sh [--endpoint HTTPS_ORIGIN] [--token-file PATH] [--profile eco|realtime] [--no-start]
+Usage: scripts/install.sh [--endpoint HTTPS_ORIGIN] [--token-file PATH] [--profile buffered|eco|realtime] [--no-start]
   --endpoint    Deployed Worker origin, without /api or /api/update. Existing value is reused if omitted.
   --token-file  Read the secret from a file. Otherwise reuse the installed token or prompt securely.
-  --profile     eco: every 120 seconds, Worker STATUS_TTL_SECONDS=180.
+  --profile     buffered: continuous native capture; upload the last 15 minutes every 5 minutes.
+                eco: every 120 seconds, Worker STATUS_TTL_SECONDS=180.
                 realtime: every 30 seconds, Worker STATUS_TTL_SECONDS=60.
   --no-start    Install files without loading the LaunchAgent (useful for inspection).
 
 Installs to ~/Library/Application Support/MacFlare. Existing privacy settings
-and custom blocked_apps are preserved. New installations default to eco; existing
+and custom blocked_apps are preserved. New installations default to buffered; existing
 profiles are retained, and legacy configurations without profile retain realtime.
 Set the Worker's STATUS_TTL_SECONDS to match the selected profile before installing.
 EOF
@@ -36,8 +37,8 @@ while [ "$#" -gt 0 ]; do
     --profile)
       [ "$#" -ge 2 ] || { usage >&2; exit 2; }
       case "$2" in
-        eco|realtime) PROFILE=$2 ;;
-        *) echo '--profile must be eco or realtime.' >&2; exit 2 ;;
+        buffered|eco|realtime) PROFILE=$2 ;;
+        *) echo '--profile must be buffered, eco or realtime.' >&2; exit 2 ;;
       esac
       shift 2 ;;
     --no-start) START=false; shift ;;
@@ -64,7 +65,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 /usr/bin/osascript -l JavaScript "$RUNTIME" configure "$SUPPORT/config.json" "$ENDPOINT" "$PROFILE" >"$TASK_TEMP/config.json" 2>/dev/null || {
-  echo 'A valid --endpoint HTTPS origin and valid JSON configuration (profile: eco or realtime) are required.' >&2; exit 1;
+  echo 'A valid --endpoint HTTPS origin and valid JSON configuration (profile: buffered, eco or realtime) are required.' >&2; exit 1;
 }
 if [ -n "$TOKEN_SOURCE" ]; then
   [ -f "$TOKEN_SOURCE" ] || { echo 'Token file does not exist.' >&2; exit 1; }
@@ -96,8 +97,10 @@ fi
 /bin/chmod 700 "$SUPPORT/agent"
 /bin/cp -- "$REPO_ROOT/agent/macflare.sh" "$SUPPORT/agent/macflare.sh"
 /bin/cp -- "$RUNTIME" "$SUPPORT/agent/runtime.js"
+/bin/cp -- "$REPO_ROOT/agent/window-runtime.js" "$SUPPORT/agent/window-runtime.js"
 /bin/chmod 700 "$SUPPORT/agent/macflare.sh"
 /bin/chmod 600 "$SUPPORT/agent/runtime.js"
+/bin/chmod 600 "$SUPPORT/agent/window-runtime.js"
 /bin/mv -f -- "$TASK_TEMP/config.json" "$SUPPORT/config.json"
 /bin/mv -f -- "$TASK_TEMP/token" "$SUPPORT/token"
 /bin/mv -f -- "$TASK_TEMP/agent.plist" "$PLIST"

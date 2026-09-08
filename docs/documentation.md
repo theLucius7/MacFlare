@@ -12,6 +12,8 @@
 | `docs/openapi.yaml` | API 的机器可读契约 |
 | `docs/.vitepress/dist/` | 构建产物，不进入 Git |
 | `worker/index.js` | `/api/*` 接口 |
+| `shared/playback.js` | 页面内存中的窗口播放状态机 |
+| `docs/buffering.md` | 窗口时序、参数、恢复边界与模式迁移 |
 
 ## 本地开发
 
@@ -46,7 +48,7 @@ Cloudflare 静态资产处理页面与脚本，只有 `/api/*` 和保留的旧�
 
 - 示例使用合成数据，不包含真实设备快照、应用历史、令牌或账户凭据。
 - 所有 API 示例使用 `/api/*`；接收地址只配置 origin，由 Agent 拼接路径。
-- 改变模式、TTL 或协议时同步更新 README、配置、API 和 OpenAPI。
+- 改变模式、窗口参数、TTL 或协议时同步更新 README、配置、缓冲时序、API 和 OpenAPI；区分云端物理保留与实际播放覆盖。
 - 相对 Markdown 链接同时服务源码阅读和构建；仓库外层文件用完整 GitHub 链接。
 - 搜索索引在浏览器本地运行，无外部搜索账户或分析脚本。
 

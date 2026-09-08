@@ -1,6 +1,6 @@
 # 故障排查
 
-先判断故障位于采集、上传还是公开读取。`/api/health` 正常只表示 Worker 可响应；`/api/now` 离线既可能表示设备未更新，也可能是 KV 传播延迟或平台写入配额耗尽。
+先判断故障位于采集、上传还是公开读取。`/api/health` 正常只表示 Worker 可响应；buffered 下 `/api/now` 离线还可能是首次暖机、缺口或目标时间未被窗口覆盖；先检查 `/api/timeline` 再判断更新是否失败。
 
 ## 快速定位
 
@@ -8,7 +8,7 @@
 # 只检查本地采集，不上传。
 /bin/bash agent/macflare.sh --print
 
-# 使用已安装配置推送一次。
+# 仅 eco／realtime 的 v1 单次推送；buffered 配置会拒绝。
 /bin/bash agent/macflare.sh --once
 
 # 检查用户级后台任务。
@@ -16,10 +16,21 @@ launchctl print "gui/$(id -u)/com.macflare.agent"
 
 # 检查公开服务。
 curl -i https://<worker>.<subdomain>.workers.dev/api/health
-curl -i https://<worker>.<subdomain>.workers.dev/api/now
+curl -i https://<worker>.<subdomain>.workers.dev/api/timeline
 ```
 
 命令输出可能包含当前应用和歌曲；提交 Issue 前先脱敏。不要输出或上传私有 token 文件。
+
+## 缓冲中、缺口或播放延迟变长
+
+- 新会话正常约在启动 7 分钟后开始播放。首个 5 分钟包尚未上传时，页面无法知道采集器已启动，可能显示离线／等待窗口；取得首包后才显示暖机倒计时。先看 `/api/timeline` 的 `mode` 与 `window_end`，不要为催促首页展示反复手动发 v1 快照。
+- 正常每 5 分钟出现一个新 `batch_seq`，网页每 60 秒读取窗口；KV 传播可能更久。网页本地每 250 毫秒检查播放，不代表每 250 毫秒请求接口。
+- “正在缓冲”可能是已经播放到最后观测时刻；收到覆盖播放头的下一包后顺序续播，实际延迟可能超过 7 分钟。
+- `gaps` 表示休眠、重启、采集停顿、溢出或时钟异常的未知时段，不能靠上一条状态填平。出现超出保留范围的恢复提示时，该段已经无法重建。
+- 检查 `window-cache.json` 的权限应为 600、父目录 700，但不要公开其中的活动内容；结果日志只需提供脱敏的 HTTP 状态、批次序号、事件数量和下一尝试时间。
+- 确认只有一个 Agent 使用当前部署。buffered 配置会拒绝 `--once`／默认推送；eco、realtime 或其他客户端仍可发送 v1，两个设备或模式共享同一 KV 键会互相覆盖。
+
+可使用 `/bin/bash agent/macflare.sh --observe 30` 在临时目录观察原生采集统计，不上传、退出删临时历史。它不代替真实后台两个上传周期的验收。[窗口恢复设计](buffering.md)
 
 ## Music 状态为空或不可用
 
@@ -35,7 +46,7 @@ curl -i https://<worker>.<subdomain>.workers.dev/api/now
 - 封面只用于新鲜的 `playing`／`paused` 状态，且 `track`、`artist` 都非空。首页优先使用上报 URL；停止播放或快照过期后撤掉封面是正常行为。
 - 本机 Apple 搜索固定为美国商店，最多 5 个歌曲候选，严格匹配标题与歌手。本地导入、其他商店独有曲目或名称差异可能没有可信结果；不会盲选其他歌曲，也不保证跨商店匹配。
 - 先按 [升级顺序](deployment.md#升级音乐封面上报) 部署新 Worker，再重装 Agent。旧 Agent 不上报 URL，因此 `/api/music` 的两个字段为 `null`；新 Agent 向旧 Worker 上报 URL 可能得到 `400 invalid_payload`。
-- 本机使用原生 `curl`，需要 Apple 搜索网络可达；查询最多 5 秒，不重试或跟随跳转。当前曲目成功缓存 1 小时、失败 5 分钟，换歌替换缓存；停止或关闭音乐采集时在后续采集中清理。查看 `--print` 与私有缓存时先注意曲目隐私。[本机缓存](configuration.md#音乐封面与本机缓存)
+- 本机使用原生 `curl`，需要 Apple 搜索网络可达；查询最多 5 秒，不重试或跟随跳转。buffered 为近期最多 64 曲维护成功 900 秒／失败 300 秒缓存；v1 为当前曲目成功 1 小时／失败 5 分钟，换歌替换缓存；停止或关闭音乐采集时在后续采集中清理。查看 `--print` 与私有缓存时先注意曲目隐私。[本机缓存](configuration.md#音乐封面与本机缓存)
 - 缺少有效上报 URL 时，首页保留浏览器兼容查询：成功结果在页面内存缓存 1 小时，普通失败／无匹配 5 分钟，最多 50 条；取消请求（含 8 秒超时）不缓存。页面可见且曲目有效时，失败重试间隔至少 5 分钟。浏览器拦截、Apple 服务或图片 CDN 失败均可能显示占位，不需要因此更改上报令牌或 Music 自动化授权。[封面数据流](privacy.md#首页歌曲封面)
 
 ## 分类接口返回空值或封面缺失
@@ -67,7 +78,7 @@ curl -i https://<worker>.<subdomain>.workers.dev/api/now
 
 ## 400、413、415：请求未通过校验
 
-`400` 常见于 JSON 格式、字段类型或 `collected_at` 时间与服务器偏差过大。保持 macOS 自动设置日期与时间，不能用一份过期的静态样例长期重放。`413` 表示超过请求体限制；`415` 表示不是 `application/json`。外部接入方应按 [API 文档](api.md) 构造请求，不加入窗口标题、未知字段或任意长文本。
+`400` 常见于 JSON 格式、字段类型或时间偏差。v1 检查 `collected_at`，v2 检查 `generated_at`（与服务器相差最多 120 秒）、三位毫秒格式、窗口／事件／缺口顺序。保持 macOS 自动设置日期与时间，不能用一份过期的静态样例长期重放。`413` 表示超过请求体限制（v1 16 KiB、v2 512 KiB）；`415` 表示不是 `application/json`。外部接入方应按 [API 文档](api.md) 构造请求，不加入窗口标题、未知字段或任意长文本。
 
 ## 503 或持续离线
 
@@ -77,11 +88,11 @@ curl -i https://<worker>.<subdomain>.workers.dev/api/now
 4. 上传成功后仍读到旧值或离线时，等待传播再观察。KV 是最终一致系统，包括“不存在”的读取也会缓存；密集轮询不能消除该延迟。[KV 一致性说明](https://developers.cloudflare.com/kv/concepts/how-kv-works/)
 5. 将 `/api/now` 的 `expires_at` 与当前时间比较；停止上传或写入失败后，达到服务端截止时间进入离线是预期行为。
 
-不要通过增大重试次数解决每日配额问题。新安装默认 eco，约 720 次定时写入/日；旧配置不会自动切换。按 [模式切换](quotas.md#切换模式) 同步设置本机 profile 与 Worker TTL。只改其中一侧不能保证节省额度并保持连续在线。
+不要通过增大重试次数解决每日配额问题。新安装默认 buffered，约 288 次定时写入/日，额外失败重试与手动操作另计；旧安装不会自动切换。按 [模式切换](quotas.md#切换模式) 先更新 Worker 再显式迁移 Agent，`STATUS_TTL_SECONDS` 只控制兼容快照，不改变 v2 窗口策略。
 
 ## 手动成功，后台不更新
 
-查看 `launchctl print "gui/$(id -u)/com.macflare.agent"` 的状态和上次退出码，以及 `~/Library/Application Support/MacFlare/last-result.json` 的最近上传时间和结果。配置或采集在上传前失败时，这个文件可能仍是旧结果；用手动 `--once` 查看当前错误。确认安装在当前已登录用户下，配置可读且 endpoint 正确。
+查看 `launchctl print "gui/$(id -u)/com.macflare.agent"` 的状态和上次退出码，以及 `~/Library/Application Support/MacFlare/last-result.json` 的最近上传时间和结果。配置或采集在上传前失败时，这个文件可能仍是旧结果；buffered 检查 `mode`、`batch_seq` 与 `next_attempt`；buffered 不使用单次推送，`--once` 会被拒绝；改用 `--print` 或 `--observe 30` 检查本机采集。确认安装在当前已登录用户下，配置可读且 endpoint 正确。
 
 `launchd` 的环境不同于交互式 shell；不要依赖 `.zshrc`、Homebrew 路径或临时导出的令牌。重新运行安装脚本更新复制的 Agent；只编辑仓库代码不会自动更新已安装副本。
 

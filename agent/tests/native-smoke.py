@@ -58,9 +58,9 @@ with tempfile.TemporaryDirectory(prefix='macflare-native-test-') as directory:
     origin = f'http://127.0.0.1:{server.server_port}'
     fresh_path = fixture_root/'new-config.json'
     fresh = json.loads(runtime('configure', fresh_path, origin))
-    assert fresh['profile'] == 'eco'
+    assert fresh['profile'] == 'buffered'
     fresh_path.write_text(json.dumps(fresh))
-    assert json.loads(runtime('configure', fresh_path, ''))['profile'] == 'eco'
+    assert json.loads(runtime('configure', fresh_path, ''))['profile'] == 'buffered'
     legacy_path = fixture_root/'legacy-config.json'
     legacy = {'endpoint': origin, 'privacy': {'music': False, 'running_apps': False}, 'blocked_apps': ['Custom Private App']}
     legacy_path.write_text(json.dumps(legacy))
@@ -69,7 +69,7 @@ with tempfile.TemporaryDirectory(prefix='macflare-native-test-') as directory:
     assert migrated['privacy']['music'] is False and migrated['privacy']['running_apps'] is False
     assert migrated['blocked_apps'] == legacy['blocked_apps'] and migrated['endpoint'] == origin
     assert json.loads(legacy_path.read_text()) == legacy, 'configure must not rewrite its source file'
-    for selected in ['eco', 'realtime']:
+    for selected in ['buffered', 'eco', 'realtime']:
         overridden = json.loads(runtime('configure', legacy_path, '', selected))
         assert overridden['profile'] == selected
         assert overridden['privacy'] == migrated['privacy'] and overridden['blocked_apps'] == migrated['blocked_apps']
@@ -87,6 +87,23 @@ with tempfile.TemporaryDirectory(prefix='macflare-native-test-') as directory:
     assert 'must be 180' in runtime('schedule-message', staged_path)
     assert 'every 30 seconds' in runtime('schedule-message', legacy_path)
     assert 'must be 60' in runtime('schedule-message', legacy_path)
+    buffered_plist = plistlib.loads(runtime('plist', REPO/'agent/macflare.sh', fresh_path).encode())
+    buffered_config = fixture_root/'buffered-config.json'
+    buffered_config.write_text(runtime('configure', legacy_path, '', 'buffered'))
+    buffered_plist = plistlib.loads(runtime('plist', REPO/'agent/macflare.sh', buffered_config).encode())
+    assert buffered_plist['KeepAlive'] is True and buffered_plist['ThrottleInterval'] == 15
+    assert 'StartInterval' not in buffered_plist and '--watch' in buffered_plist['ProgramArguments']
+    assert '/api/batch' in runtime('schedule-message', buffered_config)
+    window = json.loads(call(['/usr/bin/osascript', '-l', 'JavaScript', str(REPO/'agent/tests/window-regression.js'), str(REPO/'agent/window-runtime.js')]))
+    assert window['passed'] >= 25
+    batches_path = fixture_root/'synthetic-batches.json'
+    batches_path.write_text(json.dumps(window['batches']))
+    # Feed the real native-generated protocol through the real edge validator.
+    validation = "import {readFileSync} from 'node:fs'; import {validateTimeline} from './worker/index.js'; const batches=JSON.parse(readFileSync(process.argv[1])); for (const batch of batches) validateTimeline(batch,Date.parse(batch.generated_at)); console.log('Native/Worker contract: '+batches.length+' cases');"
+    cross = subprocess.run(['node', '--input-type=module', '-e', validation, str(batches_path)], cwd=REPO, capture_output=True, text=True, timeout=10)
+    assert cross.returncode == 0, (cross.stdout, cross.stderr)
+    observed = json.loads(call(['/bin/bash', str(REPO/'agent/macflare.sh'), '--observe', '3', '--config', str(buffered_config)]))
+    assert observed['uploads'] == 0 and observed['observations'] >= 1 and observed['checkpoint_bytes'] < 1048576
     invalid_path = fixture_root/'invalid-profile.json'
     for invalid_profile in ['fast', '__proto__', None, 120]:
         invalid_path.write_text(json.dumps(dict(legacy, profile=invalid_profile)))

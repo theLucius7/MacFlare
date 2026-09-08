@@ -8,7 +8,9 @@
 | `~/Library/Application Support/MacFlare/token` | 接收令牌原文，不是 JSON |
 | `~/Library/Application Support/MacFlare/agent/` | 安装脚本复制的 Bash 与原生 JXA 运行文件 |
 | `~/Library/Application Support/MacFlare/last-result.json` | 最近一次上传结果，不含快照或令牌 |
-| `~/Library/Application Support/MacFlare/artwork-cache.json` | 当前一首曲目的私有封面匹配缓存，无历史列表 |
+| `~/Library/Application Support/MacFlare/artwork-cache.json` | v1 快照模式的当前单曲封面匹配缓存 |
+| `~/Library/Application Support/MacFlare/window-cache.json` | buffered 最近 900 秒的私有窗口检查点，包含状态变化 |
+| `~/Library/Application Support/MacFlare/window-lock` | buffered 单实例的内核文件锁 |
 | `~/Library/LaunchAgents/com.macflare.agent.plist` | 用户级后台任务 |
 
 安装目录权限为 `700`，配置与令牌为当前用户拥有的普通文件、权限 `600`。Agent 推送前检查配置和令牌的文件类型、所有者及权限，拒绝符号链接和过宽权限。令牌不进入 plist、curl 的进程参数或状态日志。
@@ -20,7 +22,7 @@
 ```json
 {
   "endpoint": "https://macflare.your-subdomain.workers.dev",
-  "profile": "eco",
+  "profile": "buffered",
   "privacy": {
     "active_app": true,
     "running_apps": false,
@@ -35,7 +37,7 @@
 | 配置 | 默认值 | 行为 |
 | --- | --- | --- |
 | `endpoint` | 无 | 部署的 HTTPS origin；不要添加 `/api` 或 `/api/update`、查询参数、账号或密码 |
-| `profile` | 新安装 `eco`；旧配置未声明时 `realtime` | `eco` 每 120 秒，`realtime` 每 30 秒；修改后须重新安装以更新调度 |
+| `profile` | 新安装 `buffered`；旧配置未声明时 `realtime` | buffered 每 300 秒发送窗口；eco 每 120 秒、realtime 每 30 秒发送快照；修改后重装以更新调度 |
 | `privacy.active_app` | `true` | 是否采集前台应用名称；关闭时输出 `null` |
 | `privacy.running_apps` | `true` | 是否采集经过过滤的 GUI 应用名称；关闭时省略 `running_apps` |
 | `privacy.battery` | `true` | 是否采集电池；关闭时数值/充电状态为 `null`，来源为 `unknown` |
@@ -64,15 +66,17 @@
 # 使用指定配置预览，不读取令牌、不上传。
 /bin/bash agent/macflare.sh --print --config /absolute/path/to/config.json
 
-# 使用默认已安装配置上传一次。
+# 仅 eco／realtime：手动发送一次 v1 快照；buffered 配置会拒绝此命令。
 /bin/bash agent/macflare.sh --once
 ```
 
 自定义配置路径推送时，其同级目录必须有名为 `token` 的文件。Agent 接受 32–512 个合法 Bearer 字符的令牌，推荐 `openssl rand -hex 32` 生成的 64 字符值。Worker 可接受更宽的长度范围，但自带 Agent 应使用上述兼容值。
 
-修改已安装 `config.json` 的 endpoint 或隐私设置后，下次执行直接读取。修改 `profile` 必须重新运行安装脚本，以重新生成并加载调度；同时匹配 Worker TTL。想立即让隐私变更生效，先预览，再手动推送一次。修改仓库里的运行代码后，需要重装以更新后台使用的副本；再次安装会保留隐私设置和追加屏蔽名单。
+buffered 每 2 秒重新读取配置；endpoint、隐私或屏蔽名单变更会清空旧队列并建立新会话，立即安排新窗口上传，但不保证绕过 KV 传播立即撤回旧数据。快照模式在下次执行读取配置。修改 `profile` 必须重新运行安装脚本，以更新常驻／定时调度；仅快照模式需要匹配 Worker TTL。buffered 配置下 `--once` 和默认单次推送会直接拒绝，避免误用 v1 覆盖窗口；手动预览使用 `--print`，临时观察使用 `--observe`，常驻运行由安装后的 `--watch` 管理。修改仓库里的运行代码后，需要重装以更新后台使用的副本；再次安装会保留隐私设置和追加屏蔽名单。
 
 ## 音乐封面与本机缓存
+
+buffered 只为近期曲目维护最多 64 项内存封面匹配缓存：成功 900 秒、失败 300 秒。匹配后补充对应音乐事件的 URL，不改变其原始观测时刻、序号或播放状态；写入窗口检查点的 URL 随窗口一起裁剪。以下单曲 `artwork-cache.json` 规则用于 v1 快照与 `--print`。
 
 播放／暂停且歌名、歌手齐全时，Agent 使用系统 `curl` 查询 Apple iTunes Search API：`term=歌名+歌手`、`entity=song`、`country=us`、`limit=5`，由 JXA 严格匹配标题、艺人与安全 HTTPS URL。单次 Apple 查询最多 5 秒，不重试、不跟随重定向，响应最多 128 KiB；不携带 `INGEST_TOKEN`，无需额外运行环境或新的系统授权。搜索失败时继续上传已有歌曲文字与其他指标。
 
@@ -94,8 +98,8 @@
 # 只安装文件供检查，不加载后台任务。
 /bin/bash scripts/install.sh --endpoint https://<worker>.<subdomain>.workers.dev --no-start
 
-# 切换为省额度模式；先把 Worker STATUS_TTL_SECONDS 设为180并部署。
-/bin/bash scripts/install.sh --profile eco
+# 切换为滑动窗口；先部署支持 /api/batch 的 Worker。
+/bin/bash scripts/install.sh --profile buffered
 
 # 更新现有安装，复用 endpoint、token 和已有 profile。
 /bin/bash scripts/install.sh
@@ -105,7 +109,19 @@
 
 ## 调度和诊断
 
-生成 `RunAtLoad: true` 的 Aqua 用户会话 LaunchAgent，`StartInterval` 由 profile 决定：eco 为 120 秒，realtime 为 30 秒。它在登录后运行；休眠和注销时不保持在线，不主动唤醒设备。没有任意 `interval` 配置键，手动编辑 plist 会在重装时被覆盖。每轮有效快照尝试上传，没有每日写入计数器；单设备 eco 每日定时写入约 720 次。详见 [额度和模式](quotas.md)。
+所有模式都生成用户图形会话的 `RunAtLoad: true` LaunchAgent。buffered 使用 `--watch`、`KeepAlive` 与 15 秒 `ThrottleInterval` 管理常驻 JXA；内核文件锁避免多个采集器同时运行。应用／Music 通知优先、Music 2 秒异步兜底采样，硬件 30 秒；只记录字段变化，每 300 秒上传最近 900 秒窗口。eco／realtime 则用 `StartInterval` 每 120／30 秒执行一次快照。
+
+窗口检查点在权限 700 的安装目录中以 600 权限原子写入，随采集更新；恢复同一配置、仍在 900 秒保留范围的检查点时记录 `restart` 缺口，并保留原上传计划（限制在当前时间至 300 秒后），不会每次重启都重新等满 5 分钟。休眠、采集停顿等标记正长度缺口；时钟回拨可重建会话，容量溢出可能推进起点并增加丢弃计数，无法观测的时间不补造数据。配置变化会清队列、换会话。[完整数据与恢复规则](buffering.md)
+
+休眠或注销不会为了维持上传主动唤醒机器。没有任意 `interval` 配置键，手动编辑 plist 会在重装时被覆盖。每次成功集合包写一个 KV 键，正常单设备 buffered 每日定时约 288 次；不是账户级配额上限。
+
+可在独立临时目录中观察原生采集器，不上传实际活动；只输出统计，结束删除临时窗口：
+
+```sh
+/bin/bash agent/macflare.sh --observe 30
+```
+
+`--observe` 支持 1–300 秒，启用音乐时仍可能向 Apple 查询歌曲封面，不适合当成完全无网络的检查。`--print` 仍输出 v1 快照供隐私预览；两者都不替代已安装后台周期的验收。
 
 ```sh
 launchctl print "gui/$(id -u)/com.macflare.agent"
@@ -118,18 +134,18 @@ cat "$HOME/Library/Application Support/MacFlare/last-result.json"
 {"last_attempt":"2026-09-08T08:00:01.000Z","success":true,"curl_exit_code":0,"http_status":200}
 ```
 
-配置校验或采集阶段就失败时，这个文件可能没有更新，不能仅凭旧的 `success: true` 判断后台正常。LaunchAgent 的标准输出和错误输出都指向 `/dev/null`，项目不保存应用/歌曲日志；用手动 `--once` 获取当前的简短错误。
+配置校验或采集阶段就失败时，这个文件可能没有更新，不能仅凭旧的 `success: true` 判断后台正常。LaunchAgent 标准输出与错误输出指向 `/dev/null`。结果日志不保存应用/歌曲或令牌，但 buffered 的窗口检查点有短期活动数据；不要将检查点提交到 Issue。buffered 的结果还包含 `mode`、`batch_seq`、`event_count`、`next_attempt` 等调度统计。
 
-上传连接限时 5 秒、上传总请求限时 12 秒；Apple 封面查询另有单次 5 秒上限，Music 自动化也有单独限时。一次采集或请求失败后由下个调度周期继续，不做无限重试。
+上传连接限时 5 秒、上传总请求限时 12 秒；Apple 封面查询另有单次 5 秒上限，Music 自动化也有单独限时。buffered 成功后等待 300 秒；失败以 15 秒为起点指数退避，带 0.8–1 倍抖动，最多等待 300 秒，每次重建最新窗口，不追补已淘汰旧包。快照模式在下一调度周期继续。
 
 ## 停止与卸载
 
 ```sh
-# 停止后台并删除安装的代码、plist，保留配置和令牌以便重装。
+# 停止后台，删除代码、plist 和窗口／封面缓存，保留配置与令牌。
 /bin/bash scripts/uninstall.sh
 
 # 同时删除配置、令牌和最近上传结果。
 /bin/bash scripts/uninstall.sh --purge
 ```
 
-卸载不删除 Cloudflare Worker 或 KV 命名空间。最后一次接受的快照会在服务端截止时间（eco 180 秒，realtime 60 秒）后视为 offline；第三方缓存可能继续展示先前保存的状态。永久删除云端部署见 [部署指南](deployment.md#停止与删除)。
+卸载不删除 Cloudflare Worker 或 KV 命名空间。buffered 最后窗口在 `window_end + 600 秒` 截止；快照模式通常为 eco 180 秒、realtime 60 秒。停止后仍可能播放已经上传且覆盖播放头的延时数据，到期或覆盖耗尽后停止；第三方缓存可能继续展示先前保存的状态。永久删除云端部署见 [部署指南](deployment.md#停止与删除)。

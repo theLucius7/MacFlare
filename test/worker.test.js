@@ -38,7 +38,7 @@ function setup() {
 }
 
 function request(path = "/update", payload = sample(), options = {}) {
-  return new Request(`https://example.test${path}`, ["/update", "/api/update"].includes(path) ? {
+  return new Request(`https://example.test${path}`, ["/update", "/api/update", "/api/batch"].includes(path) ? {
     method: "POST",
     body: JSON.stringify(payload),
     headers: { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "application/json", ...options.headers },
@@ -868,4 +868,333 @@ test("pushing and reading music never use external fetch or Cache API, with or w
   }
   assert.equal(outbound.mock.callCount(), 0);
   assert.equal(cacheReads, 0);
+});
+
+const SESSION = "a791cf39-11f2-4ac7-9c08-ab0c5db561b0";
+const iso = (at) => new Date(at).toISOString();
+function batchSample() {
+  const start = NOW - 900_000;
+  return {
+    schema_version: 2,
+    session_id: SESSION,
+    batch_seq: 1,
+    generated_at: iso(NOW),
+    window_start: iso(start),
+    window_end: iso(NOW),
+    baseline: { ...sample(), collected_at: iso(start) },
+    events: [
+      { seq: 7, at: iso(NOW - 420_002), changes: { active_app: "Safari", music: { state: "playing", track: "First", artist: "Artist" } } },
+      { seq: 8, at: iso(NOW - 420_001), changes: { active_app: "Terminal", music: { state: "playing", track: "Second", artist: "Artist", ...ARTWORK } } },
+      { seq: 9, at: iso(NOW - 420_000), changes: { active_app: "Music", music: { state: "paused", track: "Third", artist: "Artist", ...ARTWORK } } },
+      { seq: 10, at: iso(NOW - 300_000), changes: { active_app: "Finder", music: { state: "playing", track: "Latest", artist: "Artist" } } },
+    ],
+    gaps: [],
+    dropped_events: 0,
+  };
+}
+const steadyClock = { now: () => NOW };
+
+async function uploadBatch(payload = batchSample(), now = NOW, state = setup()) {
+  const response = await handleRequest(request("/api/batch", payload), state.env, now, steadyClock);
+  return { ...state, response };
+}
+
+test("one self-contained window uses one KV write, no read, and the observation-based deadline", async () => {
+  const data = batchSample();
+  const { env, values, calls, response } = await uploadBatch(data);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true, updated_at: iso(NOW), expires_at: iso(NOW + 600_000) });
+  assert.deepEqual(calls, [{ method: "put", key: "now", options: { expiration: Math.ceil((NOW + 600_000) / 1000) } }]);
+  assert.deepEqual(JSON.parse(values.get("now")), { received_at: NOW, expires_at: NOW + 600_000, data });
+  const read = await handleRequest(request("/api/timeline"), env, NOW, steadyClock);
+  assert.deepEqual(await read.json(), {
+    status: "online", mode: "window", server_time: iso(NOW), updated_at: iso(NOW), expires_at: iso(NOW + 600_000),
+    policy: { upload_interval_seconds: 300, window_seconds: 900, playback_delay_seconds: 420, poll_interval_seconds: 60, sample_interval_seconds: 2, metrics_interval_seconds: 30 },
+    window: data,
+  });
+  assert.equal(calls.filter((call) => call.method === "get").length, 1);
+  assert.equal(values.size, 1);
+  assert.match(read.headers.get("cache-control"), /no-store/u);
+  assert.equal(read.headers.get("access-control-allow-origin"), "*");
+});
+
+test("old status and focused APIs replay rapid app and song switches instead of the latest upload", async () => {
+  const { env, calls } = await uploadBatch();
+  const now = await (await handleRequest(request("/api/now"), env, NOW, steadyClock)).json();
+  assert.equal(now.schema_version, 1);
+  assert.equal(now.active_app, "Music");
+  assert.equal(now.music.track, "Third");
+  assert.equal(now.music.state, "paused");
+  assert.equal(now.music.artwork_url, ARTWORK.artwork_url);
+  assert.equal(now.collected_at, iso(NOW - 420_000));
+  assert.equal(now.expires_at, iso(NOW + 420_000));
+  assert.deepEqual(now.playback, { mode: "delayed", delay_seconds: 420, at: iso(NOW - 420_000), window_end: iso(NOW) });
+  for (const path of ["/now", "/api/now"]) {
+    assert.deepEqual(await (await handleRequest(request(path), env, NOW, steadyClock)).json(), now);
+  }
+  const music = await (await handleRequest(request("/api/music"), env, NOW, steadyClock)).json();
+  assert.deepEqual(music.music, now.music);
+  assert.deepEqual(music.playback, now.playback);
+  const active = await (await handleRequest(request("/api/apps/active"), env, NOW, steadyClock)).json();
+  assert.deepEqual(active.active_app, { name: "Music", icon_url: "/app-icons/music.png", icon_api_url: "/api/icons/music.png" });
+  const running = await (await handleRequest(request("/api/apps/running"), env, NOW, steadyClock)).json();
+  assert.equal(running.running_apps.length, 2);
+  const device = await (await handleRequest(request("/api/device"), env, NOW, steadyClock)).json();
+  assert.deepEqual(device.device, { battery: sample().battery, system: sample().system });
+  const svg = await (await handleRequest(request("/api/badge.svg"), env, NOW, steadyClock)).text();
+  assert.match(svg, /Music/u);
+  assert.doesNotMatch(svg, /Latest/u);
+  assert.equal(calls.filter((call) => call.method === "put").length, 1);
+});
+
+test("batch validation rejects bad shape, sequence, timestamps, field patches, gaps, and URLs before KV", async () => {
+  const mutations = [
+    (d) => { d.extra = true; },
+    (d) => { d.schema_version = 1; },
+    (d) => { d.session_id = SESSION.toUpperCase(); },
+    (d) => { d.session_id = "device-name"; },
+    (d) => { d.batch_seq = 0; },
+    (d) => { d.batch_seq = Number.MAX_SAFE_INTEGER + 1; },
+    (d) => { d.dropped_events = -1; },
+    (d) => { d.dropped_events = 0.5; },
+    (d) => { d.generated_at = iso(NOW - 120_001); },
+    (d) => { d.generated_at = iso(NOW + 120_001); },
+    (d) => { d.generated_at = "2026-09-08T10:00:00Z"; },
+    (d) => { d.window_start = iso(NOW - 900_001); },
+    (d) => { d.window_start = iso(NOW + 1); },
+    (d) => { d.window_end = iso(NOW + 1); },
+    (d) => { d.generated_at = iso(NOW + 30_001); },
+    (d) => { d.baseline.collected_at = iso(NOW - 899_999); },
+    (d) => { d.baseline.battery.serial_number = "private"; },
+    (d) => { d.events[0].secret = "private"; },
+    (d) => { d.events[0].seq = 0; },
+    (d) => { d.events[0].seq = 0.5; },
+    (d) => { d.events[1].seq = d.events[0].seq; },
+    (d) => { d.events[1].seq = d.events[0].seq - 1; },
+    (d) => { d.events[0].at = iso(NOW - 900_001); },
+    (d) => { d.events[0].at = iso(NOW + 1); },
+    (d) => { d.events[1].at = d.window_start; },
+    (d) => { d.events[0].changes = {}; },
+    (d) => { d.events[0].changes = { collected_at: iso(NOW) }; },
+    (d) => { d.events[0].changes = { window_title: "private" }; },
+    (d) => { d.events[0].changes = { active_app: "x".repeat(201) }; },
+    (d) => { d.events[0].changes = { running_apps: ["Finder", "Finder"] }; },
+    (d) => { d.events[0].changes = { battery: { percent: 20 } }; },
+    (d) => { d.events[0].changes = { system: { load_1m: 0, load_5m: 0, load_15m: -1 } }; },
+    (d) => { d.events[0].changes.music.artwork_url = ARTWORK.artwork_url; },
+    (d) => { d.events[0].changes.music = { ...sample().music, ...ARTWORK, artwork_url: "https://evil.example/x.jpg" }; },
+    (d) => { d.gaps = [{ start_at: d.window_start, end_at: iso(NOW - 900_001), reason: "sleep" }]; },
+    (d) => { d.gaps = [{ start_at: d.window_start, end_at: d.window_start, reason: "sleep" }]; },
+    (d) => { d.gaps = [{ start_at: d.window_start, end_at: iso(NOW + 1), reason: "sleep" }]; },
+    (d) => { d.gaps = [{ start_at: d.window_start, end_at: iso(NOW - 800_000), reason: "secret" }]; },
+    (d) => { d.gaps = [{ start_at: d.window_start, end_at: iso(NOW - 800_000), reason: "sleep", private: 1 }]; },
+    (d) => { d.gaps = [{ start_at: d.window_start, end_at: iso(NOW - 800_000), reason: "sleep" }, { start_at: iso(NOW - 850_000), end_at: iso(NOW - 700_000), reason: "collection" }]; },
+    (d) => { d.events = Array.from({ length: 2049 }, (_, index) => ({ seq: index + 1, at: d.window_start, changes: { active_app: "Finder" } })); },
+    (d) => { d.gaps = Array.from({ length: 129 }, (_, index) => ({ start_at: iso(NOW - 900_000 + index * 2), end_at: iso(NOW - 899_999 + index * 2), reason: "clock" })); },
+  ];
+  const state = setup();
+  for (const mutate of mutations) {
+    const payload = batchSample();
+    mutate(payload);
+    const { response } = await uploadBatch(payload, NOW, state);
+    assert.equal(response.status, 400, mutate.toString());
+    assert.deepEqual(await response.json(), { error: "invalid_payload" });
+  }
+  for (const invalid of [null, [], {}, "text"]) {
+    assert.equal((await uploadBatch(invalid, NOW, state)).response.status, 400);
+  }
+  assert.equal(state.calls.length, 0);
+});
+
+test("equal-time changes preserve sequence and 2048 events plus 128 gaps remain accepted", async () => {
+  const batch = batchSample();
+  batch.events = Array.from({ length: 2048 }, (_, index) => ({ seq: index + 1, at: batch.window_start, changes: { active_app: `App ${index}` } }));
+  batch.gaps = Array.from({ length: 128 }, (_, index) => ({ start_at: iso(NOW - 850_000 + index * 2), end_at: iso(NOW - 849_999 + index * 2), reason: "clock" }));
+  batch.dropped_events = 12;
+  const { env, response } = await uploadBatch(batch);
+  assert.equal(response.status, 200);
+  const current = await (await handleRequest(request("/api/now"), env, NOW, steadyClock)).json();
+  assert.equal(current.active_app, "App 2047");
+  const timeline = await (await handleRequest(request("/api/timeline"), env, NOW, steadyClock)).json();
+  assert.equal(timeline.window.dropped_events, 12);
+  assert.equal(timeline.window.events.length, 2048);
+  assert.equal(timeline.window.gaps.length, 128);
+});
+
+test("batch body cap is 512 KiB for declared and streamed UTF-8 while v1 stays 16 KiB", async () => {
+  const data = batchSample();
+  const encoded = JSON.stringify(data);
+  const exactBody = encoded + " ".repeat(512 * 1024 - new TextEncoder().encode(encoded).byteLength);
+  const state = setup();
+  const accepted = await handleRequest(request("/api/batch", data, { body: exactBody }), state.env, NOW, steadyClock);
+  assert.equal(accepted.status, 200);
+  for (const options of [{ body: exactBody + " " }, { body: encoded, headers: { "Content-Length": String(512 * 1024 + 1) } }]) {
+    const rejected = await handleRequest(request("/api/batch", data, options), state.env, NOW, steadyClock);
+    assert.equal(rejected.status, 413);
+  }
+  const v1 = JSON.stringify(sample()) + " ".repeat(16 * 1024);
+  assert.equal((await handleRequest(request("/api/update", sample(), { body: v1 }), state.env, NOW, steadyClock)).status, 413);
+  assert.equal(state.calls.length, 1);
+});
+
+test("batch authentication and route/method restrictions happen before parsing or storage", async () => {
+  const state = setup();
+  for (const header of ["", "Bearer wrong"]) {
+    const result = await handleRequest(request("/api/batch", batchSample(), { body: "not json", headers: { Authorization: header } }), state.env, NOW, steadyClock);
+    assert.equal(result.status, 401);
+    assert.equal(result.headers.get("www-authenticate"), "Bearer");
+  }
+  for (const path of ["/api/batch", "/api/timeline"]) {
+    const options = await handleRequest(new Request(`https://example.test${path}`, { method: "OPTIONS" }), state.env, NOW, steadyClock);
+    assert.equal(options.status, 204);
+    for (const method of ["HEAD", "PUT", path === "/api/batch" ? "GET" : "POST"]) {
+      const result = await handleRequest(new Request(`https://example.test${path}`, { method }), state.env, NOW, steadyClock);
+      assert.equal(result.status, 405);
+      assert.equal(result.headers.get("allow"), path === "/api/batch" ? "POST, OPTIONS" : "GET, OPTIONS");
+    }
+  }
+  for (const path of ["/batch", "/timeline", "/api/batch/", "/api/timeline/"]) {
+    for (const method of ["GET", "OPTIONS"]) {
+      assert.equal((await handleRequest(new Request(`https://example.test${path}`, { method }), state.env, NOW, steadyClock)).status, 404);
+    }
+  }
+  assert.equal(state.calls.length, 0);
+});
+
+test("duplicate batches never extend their original observation deadline and stale retries fail closed", async () => {
+  const payload = batchSample();
+  const state = await uploadBatch(payload);
+  const second = await uploadBatch(payload, NOW + 60_500, state);
+  assert.equal(second.response.status, 200);
+  assert.deepEqual(await second.response.json(), { ok: true, updated_at: iso(NOW + 60_500), expires_at: iso(NOW + 600_000) });
+  assert.deepEqual(state.calls[1], { method: "put", key: "now", options: { expiration: Math.ceil((NOW + 600_000) / 1000) } });
+  assert.equal((await uploadBatch(payload, NOW + 120_001, state)).response.status, 400);
+  state.env.STATUS_TTL_SECONDS = "3600";
+  const retained = await (await handleRequest(request("/api/timeline"), state.env, NOW + 599_999, steadyClock)).json();
+  assert.equal(retained.expires_at, iso(NOW + 600_000));
+  for (const age of [600_000, 600_001, 3_600_000]) {
+    assert.deepEqual(await (await handleRequest(request("/api/timeline"), state.env, NOW + age, steadyClock)).json(), { status: "offline" });
+  }
+  assert.equal(state.calls.filter((call) => call.method === "put").length, 2);
+});
+
+test("first-window warming, capture gaps, and post-window playback never pretend to be online", async () => {
+  for (const mode of ["warming", "gap", "ended"]) {
+    const data = batchSample();
+    let readAt = NOW;
+    if (mode === "warming") {
+      data.window_start = iso(NOW - 60_000);
+      data.baseline.collected_at = data.window_start;
+      data.events = [];
+    } else if (mode === "gap") {
+      data.gaps = [{ start_at: iso(NOW - 421_000), end_at: iso(NOW - 419_000), reason: "sleep" }];
+    } else readAt = NOW + 420_000;
+    const { env } = await uploadBatch(data);
+    for (const path of ["/api/now", "/now", ...SLICES]) {
+      assert.deepEqual(await (await handleRequest(request(path), env, readAt, steadyClock)).json(), { status: "offline" }, `${mode} ${path}`);
+    }
+    const timeline = await (await handleRequest(request("/api/timeline"), env, readAt, steadyClock)).json();
+    assert.equal(timeline.mode, "window");
+    assert.equal(timeline.status, "online");
+    assert.match(await (await handleRequest(request("/api/badge.svg"), env, readAt, steadyClock)).text(), /offline/u);
+  }
+});
+
+test("slow KV reads re-evaluate playhead, gaps, playback cutoff, and absolute window expiry", async () => {
+  for (const [elapsed, expected, expectedTrack] of [
+    [120_000, "online", "Latest"], [420_000, "offline", null], [600_000, "offline", null],
+  ]) {
+    for (const path of ["/api/now", "/now", ...SLICES, "/api/timeline"]) {
+      const state = await uploadBatch();
+      let clock = NOW;
+      const original = state.env.STATUS_KV.get;
+      state.env.STATUS_KV.get = async (...args) => { const raw = await original(...args); clock += elapsed; return raw; };
+      const result = await (await handleRequest(request(path), state.env, NOW, { now: () => clock })).json();
+      const status = path === "/api/timeline" && elapsed < 600_000 ? "online" : expected;
+      assert.equal(result.status, status, `${path} ${elapsed}`);
+      if (status === "offline") assert.deepEqual(result, { status: "offline" });
+      if (result.music) assert.equal(result.music.track, expectedTrack);
+    }
+  }
+  const payload = batchSample();
+  payload.gaps = [{ start_at: iso(NOW - 419_000), end_at: iso(NOW - 415_000), reason: "collection" }];
+  const state = await uploadBatch(payload);
+  let clock = NOW;
+  const original = state.env.STATUS_KV.get;
+  state.env.STATUS_KV.get = async (...args) => { const raw = await original(...args); clock += 2_000; return raw; };
+  assert.deepEqual(await (await handleRequest(request("/api/music"), state.env, NOW, { now: () => clock })).json(), { status: "offline" });
+});
+
+test("corrupt stored windows and forged retention deadlines never become public", async () => {
+  for (const mutate of [
+    (r) => { r.expires_at += 1000; },
+    (r) => { delete r.expires_at; },
+    (r) => { r.data.baseline.secret = "private"; },
+    (r) => { r.data.events[0].changes.music.track_url = "https://evil.example"; },
+    (r) => { r.data.generated_at = iso(NOW - 121_000); },
+  ]) {
+    const state = await uploadBatch();
+    const record = JSON.parse(state.values.get("now"));
+    mutate(record);
+    state.values.set("now", JSON.stringify(record));
+    for (const path of ["/api/timeline", "/api/now", ...SLICES]) {
+      assert.deepEqual(await (await handleRequest(request(path), state.env, NOW, steadyClock)).json(), { status: "offline" });
+    }
+  }
+});
+
+test("timeline wraps valid old snapshots without changing the v1 interfaces or expiry", async () => {
+  const state = setup();
+  await handleRequest(request("/api/update"), state.env, NOW, steadyClock);
+  const timeline = await (await handleRequest(request("/api/timeline"), state.env, NOW, steadyClock)).json();
+  assert.deepEqual(timeline, { status: "online", updated_at: iso(NOW), expires_at: iso(NOW + 60_000), ...sample(), mode: "snapshot", server_time: iso(NOW) });
+  assert.deepEqual(await (await handleRequest(request("/api/timeline"), state.env, NOW + 60_000, steadyClock)).json(), { status: "offline" });
+  const fresh = batchSample();
+  await uploadBatch(fresh, NOW, state);
+  await handleRequest(request("/api/update", { ...sample(), active_app: "Safari" }), state.env, NOW, steadyClock);
+  const snapshot = await (await handleRequest(request("/api/now"), state.env, NOW, steadyClock)).json();
+  assert.equal(snapshot.active_app, "Safari");
+  assert.equal(Object.hasOwn(snapshot, "playback"), false);
+  assert.equal(state.values.size, 1);
+});
+
+test("window ingestion and reads never call third parties or Cache API", async (t) => {
+  const fetch = t.mock.method(globalThis, "fetch", () => { throw new Error("Unexpected fetch"); });
+  const cacheDescriptor = Object.getOwnPropertyDescriptor(globalThis, "caches");
+  let cacheCalls = 0;
+  Object.defineProperty(globalThis, "caches", { configurable: true, get() { cacheCalls += 1; throw new Error("Unexpected cache"); } });
+  t.after(() => {
+    if (cacheDescriptor) Object.defineProperty(globalThis, "caches", cacheDescriptor);
+    else delete globalThis.caches;
+  });
+  const { env, calls } = await uploadBatch();
+  for (const path of ["/api/timeline", "/api/now", ...SLICES, "/api/badge.svg"]) {
+    assert.equal((await handleRequest(request(path), env, NOW, steadyClock)).status, 200);
+  }
+  assert.equal(fetch.mock.callCount(), 0);
+  assert.equal(cacheCalls, 0);
+  assert.equal(calls.filter((call) => call.method === "put").length, 1);
+  assert.equal(calls.filter((call) => call.method === "get").length, 7);
+});
+
+test("slow batch body reads use completion time for freshness and absolute KV expiration", async () => {
+  for (const elapsed of [60_500, 120_001, 610_000]) {
+    const state = setup();
+    let time = NOW;
+    const body = new TextEncoder().encode(JSON.stringify(batchSample()));
+    const stream = new ReadableStream({ start(controller) { controller.enqueue(body); controller.close(); } });
+    const clock = { now() { const current = time; time = NOW + elapsed; return current; } };
+    const result = await handleRequest(new Request("https://example.test/api/batch", {
+      method: "POST", body: stream, duplex: "half",
+      headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
+    }), state.env, NOW, clock);
+    if (elapsed <= 120_000) {
+      assert.equal(result.status, 200);
+      assert.deepEqual(await result.json(), { ok: true, updated_at: iso(NOW + elapsed), expires_at: iso(NOW + 600_000) });
+      assert.deepEqual(state.calls, [{ method: "put", key: "now", options: { expiration: Math.ceil((NOW + 600_000) / 1000) } }]);
+    } else {
+      assert.equal(result.status, 400);
+      assert.equal(state.calls.length, 0);
+    }
+  }
 });
