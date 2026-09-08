@@ -1,6 +1,6 @@
 import installedIcons from "../docs/public/app-icons/index.json" with { type: "json" };
 import { findAppIcon } from "../docs/.vitepress/theme/app-icon-catalog.js";
-import { lookupMusicArtwork } from "./music-artwork.js";
+import { safeAppleUrl } from "../shared/music-artwork.js";
 
 const LEGACY_TTL_SECONDS = 60;
 const MAX_TTL_SECONDS = 3600;
@@ -94,10 +94,22 @@ function validateStatus(data, now) {
     || !["ac", "battery", "unknown"].includes(battery.power_source)
     || !keysMatch(system, ["load_1m", "load_5m", "load_15m"])
     || !Object.values(system).every((value) => nullableNumber(value, 100_000))
-    || !keysMatch(music, ["state", "track", "artist"])
+    || !keysMatch(music, ["state", "track", "artist"], ["artwork_url", "track_url"])
     || !["playing", "paused", "stopped", "unavailable"].includes(music.state)
     || !nullableText(music.track, 500)
     || !nullableText(music.artist, 500)) {
+    throw new ClientError(400, "invalid_payload");
+  }
+
+  const hasArtwork = Object.hasOwn(music, "artwork_url");
+  const hasTrackUrl = Object.hasOwn(music, "track_url");
+  if (hasArtwork !== hasTrackUrl || (hasArtwork
+    && !(music.artwork_url === null && music.track_url === null)
+    && !(typeof music.artwork_url === "string" && typeof music.track_url === "string"
+      && nullableText(music.artwork_url, 2048) && nullableText(music.track_url, 2048)
+      && safeAppleUrl(music.artwork_url, true) && safeAppleUrl(music.track_url, false)
+      && ["playing", "paused"].includes(music.state)
+      && music.track?.trim() && music.artist?.trim()))) {
     throw new ClientError(400, "invalid_payload");
   }
 
@@ -109,7 +121,10 @@ function validateStatus(data, now) {
     ...(Object.hasOwn(data, "running_apps") ? { running_apps: [...data.running_apps] } : {}),
     battery: { percent: battery.percent, charging: battery.charging, power_source: battery.power_source },
     system: { load_1m: system.load_1m, load_5m: system.load_5m, load_15m: system.load_15m },
-    music: { state: music.state, track: music.track, artist: music.artist },
+    music: {
+      state: music.state, track: music.track, artist: music.artist,
+      ...(hasArtwork ? { artwork_url: music.artwork_url, track_url: music.track_url } : {}),
+    },
   };
 }
 
@@ -319,7 +334,7 @@ function appWithIcon(name) {
   };
 }
 
-async function statusSlice(pathname, status, origin, lookupArtwork) {
+function statusSlice(pathname, status) {
   const envelope = {
     status: "online",
     updated_at: status.updated_at,
@@ -327,19 +342,10 @@ async function statusSlice(pathname, status, origin, lookupArtwork) {
     collected_at: status.collected_at,
   };
   if (pathname === "/api/music") {
-    let artwork = null;
-    if (["playing", "paused"].includes(status.music.state)
-      && status.music.track?.trim() && status.music.artist?.trim()) {
-      try {
-        artwork = await lookupArtwork(status.music, { origin });
-      } catch {
-        // Artwork availability never removes the current song's metadata.
-      }
-    }
     return { ...envelope, music: {
       ...status.music,
-      artwork_url: artwork?.artworkUrl ?? null,
-      track_url: artwork?.trackUrl ?? null,
+      artwork_url: status.music.artwork_url ?? null,
+      track_url: status.music.track_url ?? null,
     } };
   }
   if (pathname === "/api/apps/active") {
@@ -391,9 +397,8 @@ export async function handleRequest(request, env, now = Date.now(), dependencies
     const status = await currentStatus(env, now, ttlSeconds);
     if (slice) {
       if (status.status === "offline") return json(status);
-      const result = await statusSlice(pathname, status, url.origin, dependencies.lookupArtwork ?? lookupMusicArtwork);
-      // Keep the injected request timestamp while accounting for time spent in
-      // KV and artwork lookup; slow enrichment cannot expose expired status.
+      const result = statusSlice(pathname, status);
+      // A slow KV read must not expose a snapshot after its original deadline.
       const completedAt = now + Math.max(0, clock() - startedAt);
       return json(completedAt >= Date.parse(status.expires_at) ? { status: "offline" } : result);
     }

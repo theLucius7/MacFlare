@@ -6,14 +6,14 @@
 
 | 需要的数据 | 调用 | 主要字段 | 每次 GET 的 KV 读取 |
 | --- | --- | --- | --- |
-| 完整状态，推荐组合页面使用 | `/api/now` | 原始 `music`、应用名称、`battery`、`system` | 1 |
+| 完整状态，推荐组合页面使用 | `/api/now` | `music`（含可选 URL）、应用名称、`battery`、`system` | 1 |
 | 音乐小组件 | `/api/music` | `music.track`、`artist`、`artwork_url`、`track_url` | 1 |
 | 前台应用 | `/api/apps/active` | `active_app.name`、`icon_url`、`icon_api_url` | 1 |
 | 运行应用列表 | `/api/apps/running` | `running_apps[]`，每项含名称与图标地址 | 1 |
 | 电池与负载 | `/api/device` | `device.battery`、`device.system` | 1 |
 | 固定图标清单／PNG | `/api/icons`、`/api/icons/<id>.png` | 有限静态图标资源 | 0 |
 
-下面是相互独立的调用示例，按需要选择。需要多类数据时，每轮只调用一次 `/api/now`；不要每 120 秒并行轮询所有分类接口，它们不会合并 KV 读取。首页仍只轮询 `/api/now`，歌曲封面由浏览器直接查询 Apple。
+下面是相互独立的调用示例，按需要选择。需要多类数据时，每轮只调用一次 `/api/now`；不要每 120 秒并行轮询所有分类接口，它们不会合并 KV 读取。首页仍只轮询 `/api/now`，优先使用 Mac 上报的封面 URL，缺少有效 URL 时保留浏览器兼容查询。
 
 ```sh
 # 音乐：歌名、歌手，以及可能为 null 的封面／歌曲链接。
@@ -106,7 +106,7 @@ function render() {
 }
 ```
 
-使用非空 `music.track_url` 可另加歌曲链接。封面匹配失败时保留文字；不要自行挑选其他歌曲，也不要用封面缓存延长设备状态有效期。
+使用非空 `music.track_url` 可另加歌曲链接。`/api/music` 不进行搜索，旧 Agent 未上报 URL 时两个字段均为 `null`；先升级 Worker 再更新 Agent 才能上报新字段。封面匹配失败时保留文字；不要自行挑选其他歌曲，也不要用封面缓存延长设备状态有效期。
 
 前台应用的 `active_app.icon_url` 与运行列表每项的 `icon_url` 是相对部署根域名的静态图片路径；跨站嵌入时用 `new URL(icon_url, 'https://YOUR_HOST').href` 补全。非空时可作为图片地址，例如：
 

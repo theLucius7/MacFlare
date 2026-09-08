@@ -213,10 +213,118 @@ function xml(value) {
     .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 }
 
+var ARTWORK_SUCCESS_MS = 60 * 60 * 1000;
+var ARTWORK_EMPTY_MS = 5 * 60 * 1000;
+var ARTWORK_MAX_BYTES = 128 * 1024;
+
+function artworkNormalized(value) {
+  return typeof value === 'string' ? value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase() : '';
+}
+
+function artworkSafeUrl(value, image) {
+  if (typeof value !== 'string' || value.length > 2048 || /[\u0000-\u0020\u007f\\]/.test(value)) return false;
+  // Parse a deliberately narrow HTTPS authority: no credentials or explicit port.
+  var match = /^https:\/\/([a-zA-Z0-9.-]+)(?:[/?#]|$)/.exec(value);
+  if (!match || !/^[a-zA-Z0-9]+(?:[.-][a-zA-Z0-9]+)*$/.test(match[1])) return false;
+  var host = match[1].toLowerCase();
+  return image ? host.length > '.mzstatic.com'.length && host.slice(-'.mzstatic.com'.length) === '.mzstatic.com'
+    : host === 'itunes.apple.com' || host === 'music.apple.com';
+}
+
+function artworkMatch(body, track, artist) {
+  if (!body || !Array.isArray(body.results)) return null;
+  for (var index = 0; index < Math.min(body.results.length, 5); index += 1) {
+    var candidate = body.results[index];
+    if (!candidate || candidate.kind !== 'song' || artworkNormalized(candidate.artistName) !== artist ||
+      [candidate.trackName, candidate.trackCensoredName].every(function (name) { return artworkNormalized(name) !== track; }) ||
+      !artworkSafeUrl(candidate.artworkUrl100, true) || !artworkSafeUrl(candidate.trackViewUrl, false)) continue;
+    return { artwork_url: candidate.artworkUrl100, track_url: candidate.trackViewUrl };
+  }
+  return null;
+}
+
+function artworkCacheValue(record, key, now) {
+  if (!object(record) || record.version !== 1 || record.key !== key ||
+    !Number.isSafeInteger(record.cached_at) || !Number.isSafeInteger(record.expires_at) ||
+    now < record.cached_at || now >= record.expires_at) return undefined;
+  var value = record.value;
+  var lifetime = value === null ? ARTWORK_EMPTY_MS : ARTWORK_SUCCESS_MS;
+  if (record.expires_at - record.cached_at !== lifetime) return undefined;
+  if (value !== null && (!object(value) || !artworkSafeUrl(value.artwork_url, true) ||
+    !artworkSafeUrl(value.track_url, false))) return undefined;
+  return value === null ? null : { artwork_url: value.artwork_url, track_url: value.track_url };
+}
+
+function shellQuote(value) {
+  return "'" + String(value).replace(/'/g, "'\\''") + "'";
+}
+
+function writePrivateText(path, value) {
+  if (!$(value).writeToFileAtomicallyEncodingError(path, true, $.NSUTF8StringEncoding, null)) {
+    throw new Error('Could not write private artwork data.');
+  }
+  if (!$.NSFileManager.defaultManager.setAttributesOfItemAtPathError($({NSFilePosixPermissions: 384}), path, null)) {
+    throw new Error('Could not protect private artwork data.');
+  }
+}
+
+function enrichArtwork(music, cachePath, temporary, enabled) {
+  var result = { state: music.state, track: music.track, artist: music.artist };
+  var track = artworkNormalized(music.track), artist = artworkNormalized(music.artist);
+  if (!enabled || ['playing', 'paused'].indexOf(music.state) < 0 || !track || !artist) {
+    $.NSFileManager.defaultManager.removeItemAtPathError(cachePath, null);
+    return result;
+  }
+  var key = JSON.stringify([track, artist]), now = Date.now(), value;
+  try { value = artworkCacheValue(JSON.parse(readText(cachePath, true)), key, now); } catch (_) {}
+  if (value === undefined) {
+    // Remove the old song before searching; only one current-song record is retained.
+    $.NSFileManager.defaultManager.removeItemAtPathError(cachePath, null);
+    value = null;
+    var responsePath = temporary + '/artwork-response.json';
+    var curlPath = temporary + '/artwork-curl.conf';
+    var url = 'https://itunes.apple.com/search?term=' + encodeURIComponent(music.track.trim() + ' ' + music.artist.trim()) +
+      '&entity=song&country=us&limit=5';
+    try {
+      writePrivateText(curlPath, [
+        'url = ' + JSON.stringify(url),
+        'request = "GET"', 'connect-timeout = 3', 'max-time = 5',
+        'max-filesize = ' + ARTWORK_MAX_BYTES, 'max-redirs = 0', 'proto = "=https"',
+        'silent', 'show-error', 'fail', 'output = ' + JSON.stringify(responsePath),
+        'write-out = "%{http_code}"'
+      ].join('\n'));
+      var shell = Application.currentApplication();
+      shell.includeStandardAdditions = true;
+      var status = shell.doShellScript('/usr/bin/curl -q --config ' + shellQuote(curlPath) + ' 2>/dev/null');
+      if (status === '200') {
+        var raw = readText(responsePath, false);
+        if (Number($(raw).lengthOfBytesUsingEncoding($.NSUTF8StringEncoding)) <= ARTWORK_MAX_BYTES) {
+          value = artworkMatch(JSON.parse(raw), track, artist);
+        }
+      }
+    } catch (_) {
+      // Apple errors are optional metadata failures, never a failed status upload.
+    }
+    var cachedAt = Date.now();
+    try {
+      writePrivateText(cachePath, JSON.stringify({ version: 1, key: key, cached_at: cachedAt,
+        expires_at: cachedAt + (value ? ARTWORK_SUCCESS_MS : ARTWORK_EMPTY_MS), value: value }));
+    } catch (_) {}
+  }
+  if (value) {
+    result.artwork_url = value.artwork_url;
+    result.track_url = value.track_url;
+  }
+  return result;
+}
+
 function run(args) {
   var command = args[0];
   if (command === 'collect') return JSON.stringify(collect(configuration(args[1])));
   if (command === 'music') return JSON.stringify(music(configuration(args[1])));
+  if (command === 'artwork') {
+    return JSON.stringify(enrichArtwork(JSON.parse(readText(args[1], false)), args[2], args[3], configuration(args[4]).privacy.music));
+  }
   if (command === 'merge') {
     var data = JSON.parse(readText(args[1], false));
     try { data.music = JSON.parse(readText(args[2], false)); } catch (_) {}
