@@ -17,7 +17,7 @@ export default defineConfig({
       { text: '快速开始', link: '/getting-started' },
       { text: 'API', link: '/api' },
       { text: '免费额度', link: '/quotas' },
-      { text: 'GitHub', link: 'https://github.com/theLucius7/MacFlare' },
+      { text: 'GitHub', link: 'https://github.com/xw7qwq/macflare' },
     ],
     sidebar: [
       { text: '开始使用', items: [
@@ -46,7 +46,7 @@ export default defineConfig({
     darkModeSwitchLabel: '外观',
     docFooter: { prev: '上一页', next: '下一页' },
     lastUpdated: { text: '最后更新' },
-    editLink: { pattern: 'https://github.com/theLucius7/MacFlare/edit/main/docs/:path', text: '在 GitHub 编辑此页' },
+    editLink: { pattern: 'https://github.com/xw7qwq/macflare/edit/main/docs/:path', text: '在 GitHub 编辑此页' },
     footer: { message: 'MIT License · 文档使用本地搜索，无第三方分析脚本。', copyright: 'MacFlare contributors' },
   },
   async buildEnd(siteConfig) {

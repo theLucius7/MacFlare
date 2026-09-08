@@ -15,7 +15,7 @@ info:
     identifier: MIT
   contact:
     name: MacFlare contributors
-    url: https://github.com/theLucius7/MacFlare
+    url: https://github.com/xw7qwq/macflare
 servers:
   - url: https://macflare.lucius7.dev
     description: 维护者的公开实例，写入需要维护者的接收令牌

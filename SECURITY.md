@@ -4,7 +4,7 @@
 
 ## 报告漏洞
 
-仓库已启用 GitHub Private Vulnerability Reporting。请通过 [Report a vulnerability / 私密报告入口](https://github.com/theLucius7/MacFlare/security/advisories/new) 提交漏洞，不要在公开 Issue 中发布有效令牌、个人快照或可直接利用的完整细节。如果入口暂时不可用，请创建不含敏感细节的 Issue 请求维护者提供私密联系渠道。
+仓库已启用 GitHub Private Vulnerability Reporting。请通过 [Report a vulnerability / 私密报告入口](https://github.com/xw7qwq/macflare/security/advisories/new) 提交漏洞，不要在公开 Issue 中发布有效令牌、个人快照或可直接利用的完整细节。如果入口暂时不可用，请创建不含敏感细节的 Issue 请求维护者提供私密联系渠道。
 
 报告应描述受影响版本或提交号、触发条件、最小复现、影响及建议缓解措施。使用测试凭据和合成状态，避免提交真实秘密。测试只针对自己拥有或得到授权的部署，不要扫描其他用户的状态地址。
 

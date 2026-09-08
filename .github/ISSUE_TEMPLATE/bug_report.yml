@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         请先查看故障排查文档。不要粘贴令牌、完整私有配置或真实个人快照。
-        涉及安全漏洞请使用 [私密漏洞报告](https://github.com/theLucius7/MacFlare/security/advisories/new)，不要填写公开问题报告。
+        涉及安全漏洞请使用 [私密漏洞报告](https://github.com/xw7qwq/macflare/security/advisories/new)，不要填写公开问题报告。
   - type: input
     id: version
     attributes:
