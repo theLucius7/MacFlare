@@ -36,6 +36,8 @@ npx wrangler login
 npx wrangler kv namespace create STATUS_KV
 ```
 
+已有 Cloudflare API Token 时，可按 [API Token 部署方式](docs/deployment.md#使用已有-api-token) 设置环境变量并跳过 `wrangler login`。
+
 将命令返回的命名空间 ID 填入 `wrangler.jsonc` 的 `kv_namespaces` 中，绑定名称保持 `STATUS_KV`。然后生成随机令牌，将其妥善保存到密码管理器，用作本机和 Worker 的同一接收凭据：
 
 ```sh

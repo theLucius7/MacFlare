@@ -15,6 +15,8 @@
 
 ### 获取代码与登录
 
+以下使用浏览器 OAuth。已有可用 Cloudflare API Token 时，完成克隆和 `npm ci` 后，可跳过 `login`、`whoami`，改用下一节的环境变量方式，无需再次授予 OAuth。
+
 ```sh
 git clone https://github.com/theLucius7/MacFlare.git
 cd MacFlare
@@ -24,6 +26,26 @@ npx wrangler whoami
 ```
 
 在浏览器完成 Cloudflare OAuth。若有多个账户，确认选中的账户正确；自有配置可显式设置 `account_id`，但不要提交账户的私密凭据。Wrangler 登录命令见 [官方命令参考](https://developers.cloudflare.com/workers/wrangler/commands/general/)。
+
+### 使用已有 API Token
+
+Wrangler 支持通过 `CLOUDFLARE_API_TOKEN` 和 `CLOUDFLARE_ACCOUNT_ID` 环境变量认证。可以使用已有的用户 API Token，也可以使用账户级 API Token；Cloudflare 官方兼容表包含 Workers 和 Workers KV。[Wrangler API Token 认证](https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/) · [账户级 Token](https://developers.cloudflare.com/fundamentals/api/get-started/account-owned-tokens/)
+
+将资源范围限制为目标账户。上传 Worker 需要 `Workers Scripts Write`，创建 KV 命名空间需要 `Workers KV Storage Write`（控制台可能显示为 Edit/编辑）。只为实际部署操作授予权限；如使用模板，检查并移除无关服务权限，不授予账单修改或创建其他 Token 的权限。[Worker 上传权限](https://developers.cloudflare.com/api/resources/workers/subresources/scripts/methods/update/) · [KV 创建权限](https://developers.cloudflare.com/api/resources/kv/subresources/namespaces/methods/create/)
+
+在 **Bash 终端**中执行以下命令（macOS 默认是 zsh 时可先运行 `/bin/bash`）。令牌通过隐藏输入读取，不作为命令参数或 shell 历史中的字面量；不要启用 `set -x`、打印环境变量或录制含凭据的终端会话。
+
+```bash
+set +x
+read -r -s -p "Cloudflare API token: " CLOUDFLARE_API_TOKEN
+printf '\n'
+read -r -p "Cloudflare account ID: " CLOUDFLARE_ACCOUNT_ID
+export CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID
+```
+
+保持在同一终端继续下方的 KV、Secret 和部署步骤；Wrangler 自动读取环境变量，不需要 `wrangler login`。完成部署后运行 `unset CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID` 清除当前 shell 的变量。CI 环境应由平台 Secret 注入同名变量，本仓库 CI 只运行检查，不自动部署。
+
+**Cloudflare API Token 只用于管理云端资源；`INGEST_TOKEN` 只用于 Mac 向 `/update` 上报。** 两者必须分别生成和保存，不要把账户凭据放入本机 Agent 的 `token` 文件、Worker 的 `INGEST_TOKEN`、`.dev.vars` 或前端。账户 ID 是资源标识，不是密码，但仍应确认它对应本次部署账户。
 
 ### 创建并绑定 KV
 
