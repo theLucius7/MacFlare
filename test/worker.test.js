@@ -4,6 +4,10 @@ import worker, { handleRequest } from "../worker/index.js";
 
 const NOW = Date.parse("2026-09-08T10:00:00.000Z");
 const TOKEN = "test-secret-0123456789-abcdefghijklmnop";
+const ARTWORK = {
+  artwork_url: "https://is1-ssl.mzstatic.com/image/thumb/example/100x100bb.jpg",
+  track_url: "https://music.apple.com/us/album/example/123?i=456",
+};
 
 function sample() {
   return {
@@ -587,25 +591,14 @@ function plainApp(name) {
   return { name, icon_url: null, icon_api_url: null };
 }
 
-test("music slice enriches only the stored song and preserves the shared status deadline", async () => {
-  const { env, calls } = sliceSetup();
-  const lookups = [];
-  const artwork = {
-    artworkUrl: "https://is1-ssl.mzstatic.com/image/thumb/example/100x100bb.jpg",
-    trackUrl: "https://music.apple.com/us/album/example/123?i=456",
-  };
+test("music slice returns only the pushed song and artwork with the shared status deadline", async () => {
+  const music = { ...sample().music, ...ARTWORK };
+  const { env, calls } = sliceSetup({ ...sample(), music });
   const response = await handleRequest(request("/api/music?track=private&artist=other"), env, NOW, {
     now: () => NOW,
-    async lookupArtwork(music, options) {
-      lookups.push({ music, options });
-      return artwork;
-    },
   });
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), {
-    ...sliceEnvelope(), music: { ...sample().music, artwork_url: artwork.artworkUrl, track_url: artwork.trackUrl },
-  });
-  assert.deepEqual(lookups, [{ music: sample().music, options: { origin: "https://example.test" } }]);
+  assert.deepEqual(await response.json(), { ...sliceEnvelope(), music });
   assert.deepEqual(calls, [{ method: "get", key: "now", options: { type: "text", cacheTtl: 30 } }]);
   for (const header of ["cache-control", "cdn-cache-control", "cloudflare-cdn-cache-control"]) {
     assert.match(response.headers.get(header), /no-store/u);
@@ -613,7 +606,7 @@ test("music slice enriches only the stored song and preserves the shared status 
   assert.equal(response.headers.get("access-control-allow-origin"), "*");
 });
 
-test("music slices retain metadata when artwork is absent or fails, and skip incomplete or inactive songs", async () => {
+test("music slices preserve metadata and return null URLs when artwork was omitted or unavailable", async () => {
   for (const music of [
     { state: "playing", track: "A song", artist: "An artist" },
     { state: "paused", track: "A song", artist: "An artist" },
@@ -623,40 +616,32 @@ test("music slices retain metadata when artwork is absent or fails, and skip inc
     { state: "playing", track: "A song", artist: null },
     { state: "paused", track: "   ", artist: "An artist" },
   ]) {
-    for (const fails of [false, true]) {
-      const { env, calls } = sliceSetup({ ...sample(), music });
-      let lookups = 0;
+    for (const reported of [{}, { artwork_url: null, track_url: null }]) {
+      const { env, calls } = sliceSetup({ ...sample(), music: { ...music, ...reported } });
       const response = await handleRequest(request("/api/music"), env, NOW, {
         now: () => NOW,
-        async lookupArtwork() {
-          lookups += 1;
-          if (fails) throw new Error("Private Apple lookup error");
-          return null;
-        },
       });
       assert.equal(response.status, 200);
       assert.deepEqual(await response.json(), {
         ...sliceEnvelope(), music: { ...music, artwork_url: null, track_url: null },
       });
-      assert.equal(lookups, ["playing", "paused"].includes(music.state) && music.track?.trim() && music.artist?.trim() ? 1 : 0);
       assert.equal(calls.length, 1);
     }
   }
 });
 
-test("a slow artwork success or failure cannot return status at or beyond its original expiry", async () => {
+test("a slow KV read cannot return any slice at or beyond the original snapshot expiry", async () => {
   for (const elapsed of [59_999, 60_000, 60_001]) {
-    for (const fails of [false, true]) {
+    for (const path of SLICES) {
       const { env, calls } = sliceSetup();
       let time = NOW;
-      const response = await handleRequest(request("/api/music"), env, NOW, {
-        now: () => time,
-        async lookupArtwork() {
-          time += elapsed;
-          if (fails) throw new Error("Artwork service unavailable");
-          return { artworkUrl: "https://is1-ssl.mzstatic.com/example.jpg", trackUrl: "https://music.apple.com/us/song/123" };
-        },
-      });
+      const get = env.STATUS_KV.get;
+      env.STATUS_KV.get = async (...args) => {
+        const stored = await get(...args);
+        time += elapsed;
+        return stored;
+      };
+      const response = await handleRequest(request(path), env, NOW, { now: () => time });
       assert.equal(response.status, 200);
       const data = await response.json();
       if (elapsed < 60_000) {
@@ -677,7 +662,6 @@ test("active app slices match committed icon aliases and never construct paths f
     const { env, calls } = sliceSetup({ ...sample(), active_app: name });
     const response = await handleRequest(request("/api/apps/active?app=Finder"), env, NOW, {
       now: () => NOW,
-      lookupArtwork() { assert.fail("Application slices must not query artwork."); },
     });
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), {
@@ -703,7 +687,6 @@ test("running app slices distinguish disabled collection from an empty report an
     const { env, calls } = sliceSetup(data);
     const response = await handleRequest(request("/api/apps/running"), env, NOW, {
       now: () => NOW,
-      lookupArtwork() { assert.fail("Application slices must not query artwork."); },
     });
     assert.deepEqual(await response.json(), { ...sliceEnvelope(), running_apps: expected });
     assert.equal(calls.length, 1);
@@ -718,7 +701,6 @@ test("device slices return only the battery and system aggregate, including priv
     const { env, calls } = sliceSetup({ ...sample(), ...device });
     const response = await handleRequest(request("/api/device"), env, NOW, {
       now: () => NOW,
-      lookupArtwork() { assert.fail("Device slices must not query artwork."); },
     });
     assert.deepEqual(await response.json(), { ...sliceEnvelope(), device });
     assert.equal(calls.length, 1);
@@ -732,7 +714,6 @@ test("all slices use one status read and return exact offline without enriching 
       if (stored !== null) values.set("now", stored);
       const response = await handleRequest(request(path), env, NOW, {
         now: () => NOW,
-        lookupArtwork() { assert.fail("Offline slices must not query artwork."); },
       });
       assert.equal(response.status, 200);
       assert.deepEqual(await response.json(), { status: "offline" });
@@ -769,4 +750,122 @@ test("slice routes support canonical GET and OPTIONS only and retain generic ser
       assert.match(response.headers.get("cache-control"), /no-store/u);
     }
   }
+});
+
+test("optional paired artwork is stored in the same snapshot while legacy now responses keep their original shape", async () => {
+  const maximum = (prefix) => prefix + "a".repeat(2048 - prefix.length);
+  for (const [state, artwork] of [
+    ["playing", {}], ["paused", {}],
+    ["playing", { artwork_url: null, track_url: null }],
+    ["stopped", { artwork_url: null, track_url: null }],
+    ["unavailable", { artwork_url: null, track_url: null }],
+    ["playing", ARTWORK], ["paused", ARTWORK],
+    ["playing", { ...ARTWORK, track_url: "https://itunes.apple.com/us/album/example/123?i=456" }],
+    ["playing", { artwork_url: "HTTPS://IS1-SSL.MZSTATIC.COM:443/example.jpg", track_url: "https://music.apple.com:443/us/song/123" }],
+    ["playing", { artwork_url: maximum("https://is1-ssl.mzstatic.com/"), track_url: maximum("https://music.apple.com/") }],
+  ]) {
+    const { env, values, calls } = setup();
+    const music = { ...sample().music, state, ...artwork };
+    const data = { ...sample(), music };
+    const uploaded = await handleRequest(request("/api/update", data), env, NOW);
+    assert.equal(uploaded.status, 200);
+    assert.deepEqual(calls, [{ method: "put", key: "now", options: { expirationTtl: 60 } }]);
+    assert.deepEqual(JSON.parse(values.get("now")), { received_at: NOW, expires_at: NOW + 60_000, data });
+    for (const path of ["/now", "/api/now"]) {
+      const current = await (await handleRequest(request(path), env, NOW)).json();
+      assert.deepEqual(current, { ...sliceEnvelope(), ...data });
+      assert.equal(Object.hasOwn(current.music, "artwork_url"), Object.hasOwn(artwork, "artwork_url"));
+      assert.equal(Object.hasOwn(current.music, "track_url"), Object.hasOwn(artwork, "track_url"));
+    }
+    const slice = await (await handleRequest(request("/api/music"), env, NOW)).json();
+    assert.deepEqual(slice, { ...sliceEnvelope(), music: {
+      ...music, artwork_url: artwork.artwork_url ?? null, track_url: artwork.track_url ?? null,
+    } });
+    assert.equal(values.size, 1);
+  }
+});
+
+test("artwork fields reject incomplete pairs, unsafe URLs, excessive lengths and inappropriate song states before writing KV", async () => {
+  const invalid = [
+    (music) => { delete music.artwork_url; },
+    (music) => { delete music.track_url; },
+    (music) => { delete music.artwork_url; music.track_url = null; },
+    (music) => { delete music.track_url; music.artwork_url = null; },
+    (music) => { music.artwork_url = null; },
+    (music) => { music.track_url = null; },
+    (music) => { music.artwork_url = 1; },
+    (music) => { music.track_url = true; },
+    (music) => { music.artwork_url = []; },
+    (music) => { music.track_url = {}; },
+    (music) => { music.artwork_url = ""; },
+    (music) => { music.artwork_url = "http://is1-ssl.mzstatic.com/x.jpg"; },
+    (music) => { music.artwork_url = "https://mzstatic.com/x.jpg"; },
+    (music) => { music.artwork_url = "https://is1-ssl.mzstatic.com.evil.example/x.jpg"; },
+    (music) => { music.artwork_url = "https://user@is1-ssl.mzstatic.com/x.jpg"; },
+    (music) => { music.artwork_url = "https://is1-ssl.mzstatic.com:8443/x.jpg"; },
+    (music) => { music.artwork_url = "https://is1-ssl.mzstatic.com/x\ny.jpg"; },
+    (music) => { music.artwork_url = ` ${ARTWORK.artwork_url}`; },
+    (music) => { music.artwork_url = ARTWORK.artwork_url + "a".repeat(2049 - ARTWORK.artwork_url.length); },
+    (music) => { music.track_url = ARTWORK.track_url + "a".repeat(2049 - ARTWORK.track_url.length); },
+    (music) => { music.track_url = "javascript:alert(1)"; },
+    (music) => { music.track_url = "/music/example"; },
+    (music) => { music.track_url = "https://sub.music.apple.com/us/song/123"; },
+    (music) => { music.track_url = "https://music.apple.com.evil.example/us/song/123"; },
+    (music) => { music.track_url = "https://user:pass@music.apple.com/us/song/123"; },
+    (music) => { music.track_url = "https://music.apple.com:8080/us/song/123"; },
+    (music) => { music.state = "stopped"; },
+    (music) => { music.state = "unavailable"; },
+    (music) => { music.track = null; },
+    (music) => { music.artist = null; },
+    (music) => { music.track = "  "; },
+    (music) => { music.artist = "  "; },
+  ];
+  const { env, calls } = setup();
+  for (const mutate of invalid) {
+    const data = sample();
+    data.music = { ...data.music, ...ARTWORK };
+    mutate(data.music);
+    const response = await handleRequest(request("/api/update", data), env, NOW);
+    assert.equal(response.status, 400, mutate.toString());
+    assert.deepEqual(await response.json(), { error: "invalid_payload" });
+  }
+  assert.equal(calls.length, 0);
+});
+
+test("invalid artwork in stored data cannot become public through status or slice routes", async () => {
+  const { env, values, calls } = sliceSetup();
+  const data = { ...sample(), music: { ...sample().music, ...ARTWORK, artwork_url: "https://untrusted.example/art.jpg" } };
+  values.set("now", JSON.stringify({ received_at: NOW, expires_at: NOW + 60_000, data }));
+  for (const path of ["/api/now", ...SLICES]) {
+    assert.deepEqual(await (await handleRequest(request(path), env, NOW)).json(), { status: "offline" });
+  }
+  assert.equal(calls.length, SLICES.length + 1);
+});
+
+test("pushing and reading music never use external fetch or Cache API, with or without artwork", async (t) => {
+  const outbound = t.mock.method(globalThis, "fetch", () => { throw new Error("Unexpected outbound request"); });
+  const previousCache = Object.getOwnPropertyDescriptor(globalThis, "caches");
+  let cacheReads = 0;
+  Object.defineProperty(globalThis, "caches", { configurable: true, get() {
+    cacheReads += 1;
+    throw new Error("Unexpected Cache API access");
+  } });
+  t.after(() => {
+    if (previousCache) Object.defineProperty(globalThis, "caches", previousCache);
+    else delete globalThis.caches;
+  });
+  for (const artwork of [{}, { artwork_url: null, track_url: null }, ARTWORK]) {
+    const { env, calls } = setup();
+    const data = { ...sample(), music: { ...sample().music, ...artwork } };
+    assert.equal((await handleRequest(request("/api/update", data), env, NOW)).status, 200);
+    for (const path of ["/now", "/api/now", ...SLICES]) {
+      const response = await handleRequest(request(`${path}?track=other&app=other`), env, NOW);
+      assert.equal(response.status, 200);
+      assert.equal((await response.json()).status, "online");
+    }
+    assert.equal(calls.filter((call) => call.method === "put").length, 1);
+    assert.equal(calls.filter((call) => call.method === "get").length, 2 + SLICES.length);
+  }
+  assert.equal(outbound.mock.callCount(), 0);
+  assert.equal(cacheReads, 0);
 });

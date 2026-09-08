@@ -29,7 +29,7 @@ threading.Thread(target=server.serve_forever, daemon=True).start()
 with tempfile.TemporaryDirectory(prefix='macflare-native-test-') as directory:
     fixture_root = pathlib.Path(directory)
     support = fixture_root/'MacFlare'
-    support.mkdir(parents=True)
+    support.mkdir(parents=True, mode=0o700)
     config = support/'config.json'
     settings = {'privacy': {'music': False}, 'blocked_apps': ['  ChatGPT  ']}
     config.write_text(json.dumps(settings))
@@ -47,6 +47,11 @@ with tempfile.TemporaryDirectory(prefix='macflare-native-test-') as directory:
 
     music_regressions = json.loads(call(['/usr/bin/osascript', '-l', 'JavaScript', str(REPO/'agent/tests/music-regression.js'), str(REPO/'agent/runtime.js')]))
     assert music_regressions['passed'] == 11
+    artwork_fixture = fixture_root/'artwork-fixture'
+    artwork_fixture.mkdir(mode=0o700)
+    artwork_regressions = json.loads(call(['/usr/bin/osascript', '-l', 'JavaScript', str(REPO/'agent/tests/artwork-regression.js'), str(REPO/'agent/runtime.js'), str(artwork_fixture)]))
+    assert artwork_regressions['passed'] >= 30
+    assert (artwork_fixture/'artwork-cache.json').stat().st_mode & 0o777 == 0o600
 
     # Profile migration must preserve old schedules and privacy choices. Fixtures
     # exercise both installation inputs without changing HOME or loading launchd.
@@ -106,7 +111,11 @@ with tempfile.TemporaryDirectory(prefix='macflare-native-test-') as directory:
     assert 'profile' not in printed, 'local scheduling configuration must not change the API payload'
     assert not {'Passwords','System Settings','ChatGPT'} & set(printed['running_apps'])
     assert printed['active_app'] != 'ChatGPT'
+    cache = support/'artwork-cache.json'
+    cache.write_text((artwork_fixture/'artwork-cache.json').read_text())
+    cache.chmod(0o600)
     agent('--once')
+    assert not cache.exists(), 'privacy.music=false must delete the current-song cache'
     assert len(requests) == 1 and requests[-1][0] == '/api/update' and requests[-1][1] == 'Bearer '+secret
     result = json.loads((support/'last-result.json').read_text())
     assert result['success'] is True and result['http_status'] == 204
@@ -142,4 +151,4 @@ with tempfile.TemporaryDirectory(prefix='macflare-native-test-') as directory:
     assert merged['music']['track'] == '星晴 🌌 "测试"'
     assert len(merged_raw.encode()) <= 15001 and len(merged['running_apps']) < 64
 server.shutdown()
-print('PASS: 11 Music state/metadata regressions, profile migration/validation and staged schedules, native plist, permission checks, collection/privacy, push/auth, HTTP errors/no redirects, Unicode and payload budget')
+print('PASS: Music state/metadata and native artwork/cache/security regressions, profile migration/validation and staged schedules, native plist, permission checks, collection/privacy, push/auth, HTTP errors/no redirects, Unicode and payload budget')

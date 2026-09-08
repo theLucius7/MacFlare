@@ -4,7 +4,9 @@ info:
   version: 0.1.0
   summary: 原生 macOS 状态的单向公开快照 API
   description: >-
-    单设备协议 schema_version=1。写入须 Bearer 鉴权，查询公开。/api/now 原有结构不变。
+    单设备协议 schema_version=1。写入须 Bearer 鉴权，查询公开。/api/now 保留原有必需字段，
+    music 增加成对可选 artwork_url/track_url；旧 Agent 可省略，提供时随快照返回。
+    先部署接受新字段的 Worker 再更新 Agent；旧 Worker 会拒绝新增字段。
     音乐、前台应用、运行应用、设备分类接口只支持规范 /api/* 路径；每次 GET 各读取一次 KV，不写 KV。
     需要完整状态时只调用一次 /api/now，不要并行轮询全部分类接口。
     KV expirationTtl 由服务器配置，默认 eco 180 秒，realtime 60 秒，读取按服务端时间判断新鲜度；KV 最终一致可能造成旧值或暂时离线。
@@ -106,7 +108,8 @@ paths:
       description: >-
         快照到达 expires_at、缺失或损坏时返回 offline。
         online 不表示用户在场，也不保证所有指标可用。KV 读取失败返回 503。
-        此完整快照协议不增加封面或图标字段；需要多类状态时优先一次调用本接口。
+        需要多类状态时优先一次调用本接口。music 在 Agent 上报时返回成对可选 artwork_url/track_url，
+        未上报时省略；图标对象只在应用分类接口出现。
       responses:
         '200':
           description: 在线快照或离线状态
@@ -130,12 +133,11 @@ paths:
       operationId: getMusic
       summary: 读取音乐及可空的 Apple 封面与歌曲链接
       description: >-
-        单次 GET 读取一次 KV；没有新鲜快照时仅返回 offline。歌曲及艺人严格规范化匹配美国商店结果，
-        仅 playing/paused 且元数据齐全时查询 Apple；HTTPS URL 无匹配或搜索失败时为 null，不清空曲名。
-        Apple 查询阶段限时 4.5 秒，接口总耗时还包括 KV 与缓存访问。
-        公共目录匹配成功缓存 1 小时、失败或未匹配缓存 5 分钟。
-        缓存位于实例内存（最多 50 条）及边缘 Cache API，不含设备状态、不写 KV，可提前淘汰且不保证全局命中。
-        返回前再次检查快照截止时间，慢查询期间过期也返回 offline。仅 GET/OPTIONS，HEAD 405，无根路径别名。
+        单次 GET 读取一次 KV；没有新鲜快照时仅返回 offline。
+        封面与歌曲 URL 直接来自已验证的 Mac 快照，Worker 不查询 Apple，不使用 Cache API 缓存封面。
+        两个 URL 字段始终存在，旧 Agent 未上报时为 null，不清空曲名。
+        Mac 以原生工具查询并缓存当前一首后，随原有快照一次上报，不增加 KV 写入。
+        仅 GET/OPTIONS，HEAD 405，无根路径别名。
       responses:
         '200':
           description: 分类在线状态或精确的 offline 对象
@@ -509,26 +511,11 @@ components:
           $ref: '#/components/schemas/UtcTimestamp'
           description: 本机快照采集时间
     MusicWithArtwork:
-      type: object
-      additionalProperties: false
-      required: [state, track, artist, artwork_url, track_url]
-      properties:
-        state:
-          $ref: '#/components/schemas/Music/properties/state'
-        track:
-          $ref: '#/components/schemas/NullableMusicText'
-        artist:
-          $ref: '#/components/schemas/NullableMusicText'
-        artwork_url:
-          type: [string, 'null']
-          format: uri
-          description: 可信匹配的原始 artworkUrl100，HTTPS mzstatic.com 子域；无匹配或失败为 null
-          example: null
-        track_url:
-          type: [string, 'null']
-          format: uri
-          description: 同一可信歌曲的 HTTPS music.apple.com 或 itunes.apple.com 页面；无匹配或失败为 null
-          example: null
+      allOf:
+        - $ref: '#/components/schemas/Music'
+        - type: object
+          required: [artwork_url, track_url]
+      description: 音乐分类接口始终返回 URL 字段；旧快照缺省时补为双 null
     AppWithIcon:
       type: object
       additionalProperties: false
@@ -699,10 +686,35 @@ components:
           $ref: '#/components/schemas/NullableLoad'
         load_15m:
           $ref: '#/components/schemas/NullableLoad'
+    AppleArtworkUrl:
+      type: string
+      maxLength: 2048
+      format: uri
+      pattern: '^[Hh][Tt][Tt][Pp][Ss]://[^\u0000-\u001f\u007f]*$'
+      description: >-
+        按 Unicode 码点计最多 2048 字符，无首尾空白或 ASCII 控制字符。
+        Worker 按 URL 标准解析后要求 HTTPS、mzstatic.com 的子域，无用户信息、无非默认端口；显式 443 可用。
+        Mac 严格匹配当前歌名和歌手后采用 Apple 返回的原始 artworkUrl100，不改写分辨率。
+    AppleTrackUrl:
+      type: string
+      maxLength: 2048
+      format: uri
+      pattern: '^[Hh][Tt][Tt][Pp][Ss]://[^\u0000-\u001f\u007f]*$'
+      description: >-
+        按 Unicode 码点计最多 2048 字符，无首尾空白或 ASCII 控制字符。
+        Worker 按 URL 标准解析后要求 HTTPS、域名为 itunes.apple.com 或 music.apple.com，
+        无用户信息、无非默认端口；显式 443 可用。
     Music:
       type: object
       additionalProperties: false
       required: [state, track, artist]
+      dependentRequired:
+        artwork_url: [track_url]
+        track_url: [artwork_url]
+      description: >-
+        URL 字段成对可选：同时省略、同时为 null 或同时为安全字符串。
+        非空 URL 仅用于 playing/paused 且 track 与 artist 去除首尾空白后均非空。
+        旧 Agent 可继续省略；Worker 不补搜。必须先升级 Worker 再更新上报新字段的 Agent。
       properties:
         state:
           type: string
@@ -711,6 +723,30 @@ components:
           $ref: '#/components/schemas/NullableMusicText'
         artist:
           $ref: '#/components/schemas/NullableMusicText'
+        artwork_url:
+          oneOf:
+            - $ref: '#/components/schemas/AppleArtworkUrl'
+            - type: 'null'
+          description: 可选封面 URL，必须与 track_url 同时提供
+        track_url:
+          oneOf:
+            - $ref: '#/components/schemas/AppleTrackUrl'
+            - type: 'null'
+          description: 可选歌曲 URL，必须与 artwork_url 同时提供
+      allOf:
+        - if:
+            required: [artwork_url]
+          then:
+            oneOf:
+              - properties:
+                  artwork_url: {type: 'null'}
+                  track_url: {type: 'null'}
+              - properties:
+                  artwork_url: {type: string}
+                  track_url: {type: string}
+                  state: {enum: [playing, paused]}
+                  track: {type: string, pattern: '\S'}
+                  artist: {type: string, pattern: '\S'}
     SnapshotFields:
       type: object
       required: [schema_version, collected_at, active_app, battery, system, music]

@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { lookupArtwork } from './music-artwork.js';
+import { safeAppleUrl } from '../../../shared/music-artwork.js';
 import AppIcon from './AppIcon.vue';
 
 const snapshot = ref(null);
@@ -33,12 +34,22 @@ const musicKey = computed(() => {
   return ['playing', 'paused'].includes(music?.state) && music.track?.trim() && music.artist?.trim()
     ? JSON.stringify([music.track, music.artist]) : null;
 });
+const pushedArtwork = computed(() => {
+  const music = data.value?.music;
+  return musicKey.value && safeAppleUrl(music?.artwork_url, true) && safeAppleUrl(music?.track_url, false)
+    ? { artworkUrl: music.artwork_url, trackUrl: music.track_url } : null;
+});
+const pushedArtworkKey = computed(() => pushedArtwork.value ? JSON.stringify(pushedArtwork.value) : null);
 
-watch([musicKey, artworkRetry], async ([key], previous, onCleanup) => {
+watch([musicKey, pushedArtworkKey, artworkRetry], async ([key], previous, onCleanup) => {
   artworkRetryAt = 0;
   artwork.value = null;
   artworkFailed.value = false;
   if (!key) return;
+  if (pushedArtwork.value) {
+    artwork.value = pushedArtwork.value;
+    return;
+  }
   let current = true;
   const request = new AbortController();
   const timeout = setTimeout(() => request.abort(), 8000);

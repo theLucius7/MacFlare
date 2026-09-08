@@ -8,7 +8,7 @@ MacFlare 把选择的设备状态发布到公网。知道部署地址的任何�
 | --- | --- | --- |
 | 前台应用名称 | 显示当前正在使用的应用 | 不读取窗口标题、文档名、路径或网页 URL |
 | 正在运行的 GUI 应用名称 | 展示已打开的应用 | 不上传完整进程表、命令行或 PID；可关闭 |
-| Music 播放状态、歌名、歌手 | 显示正在听的内容 | 仅 Music.app；可关闭；不上传音频 |
+| Music 播放状态、歌名、歌手与可选封面／歌曲 URL | 显示正在听的内容 | 仅 Music.app；可关闭；不上传音频或封面文件 |
 | 电量、充电、供电来源 | 展示设备电池状态 | 不上传序列号或电池历史 |
 | 系统负载 | 展示当前负载概况 | 负载平均值不是 CPU 使用率百分比 |
 | 快照时间 | 判断新鲜度 | 公开时间可能被用于推断作息 |
@@ -29,21 +29,19 @@ MacFlare 把选择的设备状态发布到公网。知道部署地址的任何�
 
 ## 首页歌曲封面
 
-快照仍新鲜、Music 为 `playing` 或 `paused`，且歌名与歌手齐全时，访客浏览器直接向 Apple iTunes Search API 发起 GET：`term=歌名+歌手`、`entity=song`、`country=us`、`limit=5`。Apple 会收到这些公开曲目信息及访客的网络请求，包括连接 IP；查询不发送电池、应用、负载等其他设备指标或任何令牌。[Apple 搜索参数说明](https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/Searching.html)
+首页优先使用当前新鲜快照中由 Mac 上报的 `music.artwork_url` 与 `music.track_url`。访客浏览器向 Apple 图片 CDN 加载封面，点击链接访问 Apple 歌曲页面；Apple 会收到这些图片／网页请求和访客网络信息。停止播放或快照过期时撤掉封面，查询或图片失败不影响歌名和歌手。
 
-页面仅为可信匹配显示返回的 `artworkUrl100`，图片由访客浏览器向 Apple 图片 CDN 请求；点击封面会打开 Apple 的歌曲页面。美国商店无可信匹配时不盲选其他歌曲，搜索或图片失败只显示占位，不影响文字状态。收到 `stopped` 或快照过期时立即撤掉封面。[Apple 搜索结果字段](https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/UnderstandingSearchResults.html)
+缺少有效上报 URL 时，页面保留浏览器查询，以兼容旧 Agent 或没有匹配结果的快照。只有新鲜的 `playing`／`paused` 状态且歌名歌手齐全时才查询：GET 参数为 `term=歌名+歌手`、`entity=song`、`country=us`、`limit=5`。此时 Apple 还会收到公开曲目信息和访客搜索请求，包括连接 IP；不发送电池、应用、负载或令牌。美国商店无可信匹配时不盲选其他歌曲。[Apple 搜索参数](https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/Searching.html)
 
-查询缓存仅在当前浏览器页面的内存中：成功结果保留 1 小时，普通查询失败或无可信匹配保留 5 分钟，最多 50 条；取消的请求不缓存。MacFlare 不将其写入本地持久存储或 Cloudflare KV；浏览器及 Apple 自身的缓存遵循各自策略。此功能不改变 `/api/now` 协议，也不把封面字段写入设备快照。
+浏览器兼容查询的缓存只存在当前页面内存：成功 1 小时、普通失败或无匹配 5 分钟，最多 50 条；取消请求不缓存，不写本地持久存储或 KV。浏览器与 Apple 自身的 HTTP 缓存遵循各自策略。首页只轮询 `/api/now`，不为封面额外请求 `/api/music`。[Apple 封面和歌曲字段](https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/UnderstandingSearchResults.html)
 
-## 音乐 API 封面查询
+## 音乐 API 与封面上报
 
-调用 `/api/music` 时，Worker 从当前新鲜快照读取音乐状态，必要时代表调用者向 Apple iTunes Search API 查询公开歌名与歌手。固定使用美国商店、歌曲类型和最多 5 个候选；严格匹配后只返回经过检查的 Apple HTTPS 封面与歌曲 URL。该搜索由 Worker 发起，不发送设备电量、负载、应用列表或接收令牌。
+Mac Agent 使用系统 `curl` 向 Apple iTunes Search API 查询公开歌名与歌手，并通过原生 JXA 严格匹配美国商店的歌曲结果。Apple 收到 Mac 的搜索请求与网络信息；查询不携带接收令牌、设备电量、负载或应用列表，不下载封面图片。匹配成功后，安全 HTTPS URL 随现有快照一起上传并保存在同一个 KV 键中，不增加推送或写入次数。
 
-服务端缓存只保存公开目录的匹配结果，不保存播放状态、设备快照或历史记录，也不写 KV。成功结果缓存 1 小时，未匹配或失败结果缓存 5 分钟；每个运行实例最多保留 50 条内存记录，并可复用所在边缘节点的 Cache API 结果。这些缓存可能提前淘汰，不承诺跨地区共享；公开目录结果可能晚于设备快照 TTL 过期，不能据此判断设备仍在线。
+本机私有 `artwork-cache.json` 仅保留当前一首曲目的规范化歌名／歌手、缓存时间及匹配 URL 或失败结果：成功最多复用 1 小时，失败 5 分钟。换歌替换旧项；下一次采集检测到停止、状态不可用、元数据不全或关闭 `privacy.music` 时清理，不积累历史列表。私有缓存位于权限为 `700` 的配置目录，文件权限为 `600`；没有有效私有配置或目录／缓存权限不安全时使用本次临时缓存。[本机缓存说明](configuration.md#音乐封面与本机缓存)
 
-API 调用者将 `artwork_url` 放入图片元素后，访客浏览器向 Apple 图片 CDN 发起请求，Apple 会收到对应图片请求和访客网络信息；点击 `track_url` 会访问 Apple 的歌曲页面。封面字段可为 `null`，无需为显示文字状态自行补搜。
-
-首页仍按 [浏览器封面流程](#首页歌曲封面) 直接查询 Apple，不额外请求 `/api/music`。两条路径的缓存彼此独立，都不改变 `/api/now` 或本机上报字段。
+Worker 不再请求 Apple，也不通过 Cache API 缓存音乐匹配结果。`/api/now` 保留旧字段，并在上报提供时返回两个可选 URL；`/api/music` 始终包含这两个字段，旧 Agent 没有上报时为 `null`。URL 与设备快照一起受服务端 TTL 限制，本机匹配缓存不会延长在线期限。先升级 Worker，再更新 Agent。[兼容升级](deployment.md#升级音乐封面上报)
 
 ## 首页应用图标
 
