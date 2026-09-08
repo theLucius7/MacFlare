@@ -32,7 +32,7 @@ test('Worker artwork search uses a fixed Apple endpoint and normalized exact mat
   assert.deepEqual(Object.fromEntries(new URL(url).searchParams), { term: 'Example Song Example Artist', entity: 'song', country: 'us', limit: '5' });
   assert.equal(options.method, 'GET');
   assert.equal(options.credentials, 'omit');
-  assert.equal(options.redirect, 'error');
+  assert.equal(options.redirect, 'manual');
   assert.equal(options.headers, undefined);
   const result = await lookup({ ...MUSIC, state: 'paused' }, { origin });
   result.artworkUrl = 'https://untrusted.example/';
@@ -54,7 +54,7 @@ test('a fresh isolate reuses only unexpired safe public artwork from the edge ca
   assert.deepEqual(await first.lookup(MUSIC, { origin }), VALUE);
   assert.equal(puts.length, 1);
   const { request, body } = puts[0];
-  assert.match(request.url, /^https:\/\/macflare\.example\/__macflare\/artwork\/v1\/[a-f0-9]{64}$/u);
+  assert.match(request.url, /^https:\/\/macflare\.example\/__macflare\/artwork\/v2\/[a-f0-9]{64}$/u);
   assert.equal(request.headers.has('Authorization'), false);
   assert.deepEqual(body, { version: 1, expiresAt: 3_601_000, value: VALUE });
   assert.equal(JSON.stringify(body).includes(MUSIC.track), false);
@@ -113,6 +113,21 @@ test('a stalled upstream is aborted and negatively cached without delaying metad
   assert.equal(signal.aborted, true);
   assert.equal(await lookup(MUSIC, { origin }), null);
   assert.equal(calls.length, 1);
+});
+
+test('Apple redirects are rejected without following their destination or accepting their body', async () => {
+  for (const status of [301, 302, 303, 307, 308]) {
+    const { lookup, calls } = harness({ fetchImpl: async (_, options) => {
+      assert.equal(options.redirect, 'manual');
+      return Response.json({ results: [candidate] }, {
+        status, headers: { Location: 'https://untrusted.example/search' },
+      });
+    } });
+    assert.equal(await lookup(MUSIC, { origin }), null);
+    assert.equal(await lookup(MUSIC, { origin }), null);
+    assert.equal(calls.length, 1);
+    assert.equal(new URL(calls[0][0]).origin, 'https://itunes.apple.com');
+  }
 });
 
 test('concurrent requests for one song share one upstream request', async () => {

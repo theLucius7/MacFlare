@@ -72,7 +72,8 @@ export function createMusicArtworkLookup({
       try {
         const response = await fetchImpl(`https://itunes.apple.com/search?${parameters}`, {
           method: 'GET', credentials: 'omit', referrerPolicy: 'no-referrer',
-          redirect: 'error', signal: controller.signal,
+          // workerd accepts only follow/manual. searchJson rejects every 3xx.
+          redirect: 'manual', signal: controller.signal,
         });
         return matchedArtwork(await searchJson(response), track, artist);
       } catch {
@@ -96,7 +97,8 @@ export function createMusicArtworkLookup({
         if (cache) {
           const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key));
           const hash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
-          cacheRequest = new Request(`${url.origin}/__macflare/artwork/v1/${hash}`);
+          // v2 discards negative entries from the unsupported redirect mode.
+          cacheRequest = new Request(`${url.origin}/__macflare/artwork/v2/${hash}`);
           const cached = await cache.match(cacheRequest);
           if (cached) {
             const record = await cached.json();
