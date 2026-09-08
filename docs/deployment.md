@@ -9,7 +9,7 @@
 - Cloudflare 账户具有部署 Workers 和创建 Workers KV 命名空间的权限。
 - GitHub 账户只用于克隆或贡献项目，Mac 状态上报不需要 GitHub 凭据。
 
-新安装默认 eco：120 秒推送、180 秒 TTL，全天约 720 次 KV 写入；免费配额为每日 1,000 次，手动操作与同账户其他项目另计。旧无 profile 的本机配置保留 realtime，升级时显式切换。参见 [免费额度与模式](quotas.md)。
+新安装默认 buffered：每 300 秒上传最近 900 秒窗口，正常延时 420 秒播放，全天定时约 288 次 KV 写入；免费配额为每日 1,000 次，手动操作、重试与同账户其他项目另计。旧安装保留已有模式，旧无 profile 的配置保留 realtime；升级时显式指定 buffered。参见 [免费额度与模式](quotas.md)。
 
 ## 部署 Worker
 
@@ -45,7 +45,7 @@ export CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID
 
 保持在同一终端继续下方的 KV、Secret 和部署步骤；Wrangler 自动读取环境变量，不需要 `wrangler login`。完成部署后运行 `unset CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID` 清除当前 shell 的变量。CI 环境应由平台 Secret 注入同名变量，本仓库 CI 检查代码、原生脚本和文档构建，不自动部署 Cloudflare。
 
-**Cloudflare API Token 只用于管理云端资源；`INGEST_TOKEN` 只用于 Mac 向 `/api/update` 上报。** 两者必须分别生成和保存，不要把账户凭据放入本机 Agent 的 `token` 文件、Worker 的 `INGEST_TOKEN`、`.dev.vars` 或前端。账户 ID 是资源标识，不是密码，但仍应确认它对应本次部署账户。
+**Cloudflare API Token 只用于管理云端资源；`INGEST_TOKEN` 只用于 Mac 向 `/api/batch` 或 `/api/update` 上报。** 两者必须分别生成和保存，不要把账户凭据放入本机 Agent 的 `token` 文件、Worker 的 `INGEST_TOKEN`、`.dev.vars` 或前端。账户 ID 是资源标识，不是密码，但仍应确认它对应本次部署账户。
 
 ### 创建并绑定 KV
 
@@ -84,7 +84,7 @@ Worker 的 Custom Domain 同时服务主页、文档和 `/api/*`，无需另外�
 确认 `https://macflare.example.com/api/health` 正常，再更新本机：
 
 ```sh
-/bin/bash scripts/install.sh --endpoint https://macflare.example.com --profile eco
+/bin/bash scripts/install.sh --endpoint https://macflare.example.com --profile buffered
 ```
 
 维护者实例为 `https://macflare.lucius7.dev`。普通使用者应部署自己的实例，不向维护者实例上传。
@@ -94,6 +94,22 @@ Worker 的 Custom Domain 同时服务主页、文档和 `/api/*`，无需另外�
 `npm run deploy` 先构建 `docs/.vitepress/dist`，Wrangler 将这些静态资产与 Worker 一起发布。`/api/*` 以及旧 `/now`、`/update`、`/badge.svg`、`/health` 走 Worker；其他页面由静态资产处理。旧上传入口直接处理请求，不通过重定向传递 Bearer。
 
 不要删除 `assets.run_worker_first` 中的 API 规则，否则文档导航请求可能误吞 API。部署后验证 `/` 是 HTML、`/api/now` 是 JSON、`/api/badge.svg` 是 SVG、未知 `/api/*` 返回 JSON 404。
+
+## 升级滑动窗口模式
+
+先部署支持 v2 的 Worker，再迁移本机；旧 Worker 不提供 `/api/batch`。新 Worker 同时接受 `/api/update` 旧快照，因此可以先安全部署云端。
+
+```sh
+npm ci
+npm run deploy
+/bin/bash scripts/install.sh --profile buffered
+```
+
+安装保留已有 endpoint、token、隐私和追加屏蔽名单，替换 Agent 代码并改用常驻调度。`STATUS_TTL_SECONDS` 仅控制 v1 快照，不改变 v2 的窗口策略。启动新会话后首页正常暖机约 7 分钟，已有旧快照或 KV 传播可能影响初次显示。
+
+用 `/api/timeline` 检查 `mode: "window"`、`session_id`、`batch_seq`、`window_end`，等待两个 5 分钟周期确认序号与窗口前进；观察期间切换应用或歌曲，检查这些已观测变化进入同一包并依时间回放。原有 `/api/now`、`/api/music`、应用、设备和徽章在 buffered 下返回延时切片，缺少对应覆盖时为 offline。[时序和恢复](buffering.md)
+
+回退到快照模式前设置对应 Worker TTL（eco 180 秒、realtime 60 秒），再运行 `scripts/install.sh --profile eco` 或 `--profile realtime`。buffered 配置会拒绝 `--once` 和默认单次推送，避免 v1 覆盖窗口；手动预览使用 `--print`，原生采集统计使用 `--observe 30`。
 
 ## 升级音乐封面上报
 
@@ -130,10 +146,10 @@ npm run deploy
 
 1. `GET /api/health` 返回 `{"ok":true,"service":"macflare"}`。这只证明 Worker 路由可以响应，不能证明 KV 或 Mac 正常。
 2. 无 Bearer 的 `POST /api/update` 返回 401，确保未开放匿名写入。
-3. 手动执行 Agent 单次推送，确认成功；再请求 `/api/now`，核对电量、应用名称和快照时间。KV 跨位置传播可能延迟，不应每秒密集重试。
-4. 观察至少两个后台调度周期，确认 `updated_at` 有变化；一次手动成功不能证明 LaunchAgent 有效。
+3. buffered 检查 `/api/timeline` 与私有 `last-result.json` 的批次结果；快照模式才使用手动 `--once`。核对允许公开的电量、应用及时间。KV 跨位置传播可能延迟，不应每秒密集重试。
+4. 观察至少两个后台上传周期，确认 `updated_at` 和 buffered 的 `batch_seq`、`window_end` 前进；首次暖机之后检查实际变化顺序，一次手动成功不能证明 LaunchAgent 有效。
 5. Music 正在播放时，分别验证手动采集与后台周期中的歌名、歌手；升级 Agent 后还可检查成对封面 URL，未匹配时为空不影响其他状态；暂停、退出和拒绝授权分别检查降级语义。后台自动化授权主体可能显示为 **bash**，需用户允许它控制 Music，不能用前台成功代替后台验证。见 [Music 授权排查](troubleshooting.md#music-状态为空或不可用)。
-6. 停止后台任务，等待超过响应中的 `expires_at`（eco 约 180 秒，realtime 60 秒），再直接请求 `/api/now`，应为 offline。GitHub 徽章缓存不用于此验收。
+6. 停止后台任务，等待超过响应中的 `expires_at`（buffered 为窗口末尾加 600 秒，eco 约 180 秒，realtime 60 秒），再直接请求 `/api/now`，应为 offline。GitHub 徽章缓存不用于此验收。
 7. 按需重新安装启用后台，并记录实际验证日期、版本和未解决问题。
 
 ```sh
@@ -170,6 +186,6 @@ Worker 的版本和部署记录可在 Cloudflare 控制台查看；回滚选择�
 
 ## 停止与删除
 
-停止本机使用仓库的卸载脚本，选项见 [配置指南](configuration.md#停止与卸载)。停止推送后，最近快照会按 TTL 过期。
+停止本机使用仓库的卸载脚本，选项见 [配置指南](configuration.md#停止与卸载)。停止推送后，最新窗口或快照按响应中的绝对截止时间过期。
 
 永久删除部署时，先确认 Worker 与 KV 命名空间只属于本项目，再在 Cloudflare 控制台删除 Worker 和对应命名空间，并撤销不再需要的部署凭据。命名空间删除不可恢复；不应删除其他项目共享的资源。删除部署不能撤回已被第三方保存的公开状态。

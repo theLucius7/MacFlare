@@ -2,14 +2,16 @@ openapi: 3.1.0
 info:
   title: MacFlare API
   version: 0.1.0
-  summary: 原生 macOS 状态的单向公开快照 API
+  summary: 原生 macOS 状态的单向滑动窗口与快照 API
   description: >-
-    单设备协议 schema_version=1。写入须 Bearer 鉴权，查询公开。/api/now 保留原有必需字段，
+    单设备协议 v1 快照与 v2 滑动窗口。写入须 Bearer 鉴权，查询公开。/api/now 保留原有必需字段，
     music 增加成对可选 artwork_url/track_url；旧 Agent 可省略，提供时随快照返回。
     先部署接受新字段的 Worker 再更新 Agent；旧 Worker 会拒绝新增字段。
     音乐、前台应用、运行应用、设备分类接口只支持规范 /api/* 路径；每次 GET 各读取一次 KV，不写 KV。
     需要完整状态时只调用一次 /api/now，不要并行轮询全部分类接口。
-    KV expirationTtl 由服务器配置，默认 eco 180 秒，realtime 60 秒，读取按服务端时间判断新鲜度；KV 最终一致可能造成旧值或暂时离线。
+    buffered 每300秒上传最近900秒窗口，正常延时420秒播放；/api/timeline 每60秒读取，客户端内存回放。
+    v2 绝对截止为 window_end 加600秒，原状态接口按服务器时间减420秒投影，无覆盖或缺口返回offline，投影截止为window_end加420秒。
+    v1 TTL由服务器配置，默认eco180秒、realtime60秒。KV最终一致可能造成旧值、缓冲或暂时离线；不承诺记录未观测操作或无限补传。
     已知路径支持 OPTIONS 204，仅图标接口支持 HEAD；未知路径或图标返回 404。查询参数不改变行为。
     所有接口设置 CORS *；状态接口使用 no-store，图标 API 成功响应公开缓存 1 小时，不访问 KV。
     原生图标为有限静态清单，与设备在线状态无关；API 请求会执行 Worker，静态 /app-icons/ 路径无需执行。
@@ -34,6 +36,100 @@ servers:
     description: Wrangler 本地开发，默认不连接线上 KV
 security: []
 paths:
+  /api/batch:
+    post:
+      operationId: uploadWindow
+      summary: 验证并覆盖完整滑动窗口
+      description: >-
+        未压缩UTF-8 JSON，最多524288字节。一次成功请求只写一个KV键，无逐事件写入或跨请求事务性版本仲裁。
+        v2时间严格为UTC三位毫秒；generated_at距接收时间最多120秒，window_end不得晚于generated_at且相差最多30秒。
+        窗口跨度最多900秒，基线collected_at等于window_start；事件seq严格递增、at非降序，缺口排序且不重叠。
+        绝对截止为window_end加600秒，晚到或重复写入不能延长该窗口期限。
+        单个Agent负责顺序发送；消费者按会话和批次防旧数据倒退。先部署新Worker再启用buffered Agent。
+      security:
+        - ingestBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WindowInput'
+      responses:
+        '200':
+          description: 一次KV写入完成；expires_at为window_end加600秒
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateResult'
+        '400':
+          description: invalid_json 或 invalid_payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: unauthorized
+          headers:
+            WWW-Authenticate:
+              schema: {type: string, const: Bearer}
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '413':
+          description: payload_too_large，或非法Content-Length
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '415':
+          description: unsupported_media_type，包含压缩Content-Encoding
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    options:
+      operationId: optionsBatch
+      responses:
+        '204':
+          $ref: '#/components/responses/Preflight'
+  /api/timeline:
+    get:
+      operationId: getTimeline
+      summary: 获取窗口、缺口与播放策略，兼容旧快照
+      description: >-
+        单次GET一次KV读取、无写入，推荐每60秒拉取并在客户端内存按事件时间播放。
+        v2 online仅表示窗口尚有效，不表示目标播放时刻已有覆盖；首次暖机、缺口与耗尽需客户端处理。
+        v1返回原在线快照并添加mode=snapshot、server_time；原/api/now自身v1形状不变。
+        无有效记录返回精确offline对象；KV失败返回503。只有GET和OPTIONS，无HEAD或根路径别名。
+      responses:
+        '200':
+          description: 有效窗口、兼容快照或离线
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/StatusCacheControl'
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/PublicOrigin'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/WindowStatus'
+                  - $ref: '#/components/schemas/SnapshotTimelineStatus'
+                  - $ref: '#/components/schemas/OfflineStatus'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    options:
+      operationId: optionsTimeline
+      responses:
+        '204':
+          $ref: '#/components/responses/Preflight'
   /api/update:
     post:
       operationId: updateStatus
@@ -106,7 +202,8 @@ paths:
       operationId: getStatus
       summary: 读取当前公开状态
       description: >-
-        快照到达 expires_at、缺失或损坏时返回 offline。
+        v2返回服务器时间减420秒的切片并附playback；未覆盖、缺口、窗口耗尽时offline，expires_at为window_end加420秒。
+        v1快照到达expires_at、缺失或损坏时返回offline。
         online 不表示用户在场，也不保证所有指标可用。KV 读取失败返回 503。
         需要多类状态时优先一次调用本接口。music 在 Agent 上报时返回成对可选 artwork_url/track_url，
         未上报时省略；图标对象只在应用分类接口出现。
@@ -133,10 +230,10 @@ paths:
       operationId: getMusic
       summary: 读取音乐及可空的 Apple 封面与歌曲链接
       description: >-
-        单次 GET 读取一次 KV；没有新鲜快照时仅返回 offline。
+        单次GET读取一次KV；v2按延时420秒投影并附playback，缺口或无覆盖时offline；v1沿用快照规则。
         封面与歌曲 URL 直接来自已验证的 Mac 快照，Worker 不查询 Apple，不使用 Cache API 缓存封面。
         两个 URL 字段始终存在，旧 Agent 未上报时为 null，不清空曲名。
-        Mac 以原生工具查询并缓存当前一首后，随原有快照一次上报，不增加 KV 写入。
+        Mac 以原生工具查询，buffered缓存近期曲目、v1缓存当前一首，随窗口或快照上报，不单独增加KV写入。
         仅 GET/OPTIONS，HEAD 405，无根路径别名。
       responses:
         '200':
@@ -166,7 +263,7 @@ paths:
       operationId: getActiveApp
       summary: 读取前台应用及原生图标地址
       description: >-
-        单次 GET 读取一次 KV，不写 KV；没有新鲜快照时仅返回 offline。
+        单次GET读取一次KV、不写KV；v2按延时420秒投影并附playback，缺口或无覆盖时offline；v1沿用快照规则。
         未采集或不可用时 active_app 为 null。未知或 System 保留名称，两种图标 URL 为 null。
         icon_url 是相对于部署根域名的静态路径，icon_api_url 是同一 PNG 的 API 路径。
         不向第三方搜索应用名。仅 GET/OPTIONS，HEAD 405，无根路径别名。
@@ -198,7 +295,7 @@ paths:
       operationId: getRunningApps
       summary: 读取运行应用列表及原生图标地址
       description: >-
-        单次 GET 读取一次 KV，不写 KV；没有新鲜快照时仅返回 offline。
+        单次GET读取一次KV、不写KV；v2按延时420秒投影并附playback，缺口或无覆盖时offline；v1沿用快照规则。
         原快照未采集 running_apps 时返回 null，已采集但无应用时返回空数组；每项名称与图标结构同前台应用。
         未知图标 URL 为 null，不向第三方搜索应用名。仅 GET/OPTIONS，HEAD 405，无根路径别名。
       responses:
@@ -229,7 +326,7 @@ paths:
       operationId: getDevice
       summary: 读取电池与系统负载
       description: >-
-        单次 GET 读取一次 KV，不写 KV；没有新鲜快照时仅返回 offline。
+        单次GET读取一次KV、不写KV；v2按延时420秒投影并附playback，缺口或无覆盖时offline；v1沿用快照规则。
         device.battery 和 device.system 与完整快照结构一致，保留不可用字段的 null。
         系统负载不是 CPU 使用率。仅 GET/OPTIONS，HEAD 405，无根路径别名。
       responses:
@@ -496,6 +593,159 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
   schemas:
+    MillisecondTimestamp:
+      type: string
+      format: date-time
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$'
+      description: 规范UTC时间，必须精确保留3位毫秒
+    Playback:
+      type: object
+      additionalProperties: false
+      required: [mode, delay_seconds, at, window_end]
+      properties:
+        mode: {type: string, const: delayed}
+        delay_seconds: {type: integer, const: 420}
+        at:
+          $ref: '#/components/schemas/MillisecondTimestamp'
+          description: 服务器当前时间减420秒的投影时刻
+        window_end:
+          $ref: '#/components/schemas/MillisecondTimestamp'
+    WindowPolicy:
+      type: object
+      additionalProperties: false
+      required: [upload_interval_seconds, window_seconds, playback_delay_seconds, poll_interval_seconds, sample_interval_seconds, metrics_interval_seconds]
+      properties:
+        upload_interval_seconds: {type: integer, const: 300}
+        window_seconds: {type: integer, const: 900}
+        playback_delay_seconds: {type: integer, const: 420}
+        poll_interval_seconds: {type: integer, const: 60}
+        sample_interval_seconds: {type: integer, const: 2}
+        metrics_interval_seconds: {type: integer, const: 30}
+    WindowChanges:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: 非空顶层字段替换，沿用v1类型；不是对象内深层合并，music须完整替换
+      properties:
+        active_app:
+          $ref: '#/components/schemas/NullableAppName'
+        running_apps:
+          $ref: '#/components/schemas/SnapshotFields/properties/running_apps'
+        battery:
+          $ref: '#/components/schemas/Battery'
+        system:
+          $ref: '#/components/schemas/System'
+        music:
+          $ref: '#/components/schemas/Music'
+    WindowEvent:
+      type: object
+      additionalProperties: false
+      required: [seq, at, changes]
+      properties:
+        seq:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+          description: 会话内正安全整数；同包严格递增
+        at:
+          $ref: '#/components/schemas/MillisecondTimestamp'
+          description: 本机观测时间，在窗口内且非降序；时间相同按seq排序
+        changes:
+          $ref: '#/components/schemas/WindowChanges'
+    WindowGap:
+      type: object
+      additionalProperties: false
+      required: [start_at, end_at, reason]
+      description: 窗口内半开区间[start_at,end_at)，起点小于终点；数组中按时间排序且不重叠
+      properties:
+        start_at:
+          $ref: '#/components/schemas/MillisecondTimestamp'
+        end_at:
+          $ref: '#/components/schemas/MillisecondTimestamp'
+        reason:
+          type: string
+          enum: [sleep, restart, collection, overflow, clock]
+    WindowInput:
+      type: object
+      additionalProperties: false
+      required: [schema_version, session_id, batch_seq, generated_at, window_start, window_end, baseline, events, gaps, dropped_events]
+      description: >-
+        完整自包含窗口；所有时间关系、数组顺序与最大正文大小另由Worker校验。
+        window_start<=window_end、跨度<=900秒；window_end<=generated_at且差<=30秒；generated_at距服务器接收时间<=120秒。
+        baseline.collected_at精确等于window_start，不适用v1入口的当前时间正负120秒限制。
+      properties:
+        schema_version: {type: integer, const: 2}
+        session_id:
+          type: string
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          description: 小写UUID形式；隐私配置变化时清队列并更换会话
+        batch_seq:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+          description: 会话内批次序号，消费端防止旧KV结果使播放倒退
+        generated_at:
+          $ref: '#/components/schemas/MillisecondTimestamp'
+        window_start:
+          $ref: '#/components/schemas/MillisecondTimestamp'
+        window_end:
+          $ref: '#/components/schemas/MillisecondTimestamp'
+        baseline:
+          allOf:
+            - $ref: '#/components/schemas/StatusInput'
+            - type: object
+              properties:
+                collected_at:
+                  $ref: '#/components/schemas/MillisecondTimestamp'
+          description: 起点完整v1快照；collected_at精确等于window_start
+        events:
+          type: array
+          maxItems: 2048
+          items:
+            $ref: '#/components/schemas/WindowEvent'
+        gaps:
+          type: array
+          maxItems: 128
+          items:
+            $ref: '#/components/schemas/WindowGap'
+        dropped_events:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+    WindowStatus:
+      type: object
+      additionalProperties: false
+      required: [status, mode, server_time, updated_at, expires_at, policy, window]
+      properties:
+        status: {type: string, const: online}
+        mode: {type: string, const: window}
+        server_time:
+          $ref: '#/components/schemas/MillisecondTimestamp'
+        updated_at:
+          $ref: '#/components/schemas/UtcTimestamp'
+          description: Worker接收这一包的时间
+        expires_at:
+          $ref: '#/components/schemas/MillisecondTimestamp'
+          description: window_end加600秒；并不表示播放头一直有观测覆盖
+        policy:
+          $ref: '#/components/schemas/WindowPolicy'
+        window:
+          $ref: '#/components/schemas/WindowInput'
+    SnapshotTimelineStatus:
+      allOf:
+        - $ref: '#/components/schemas/SnapshotFields'
+        - type: object
+          required: [status, mode, server_time, updated_at, expires_at]
+          properties:
+            status: {type: string, const: online}
+            mode: {type: string, const: snapshot}
+            server_time:
+              $ref: '#/components/schemas/MillisecondTimestamp'
+            updated_at:
+              $ref: '#/components/schemas/UtcTimestamp'
+            expires_at:
+              $ref: '#/components/schemas/UtcTimestamp'
+      unevaluatedProperties: false
     SliceEnvelope:
       type: object
       required: [status, updated_at, expires_at, collected_at]
@@ -509,7 +759,10 @@ components:
           description: 当前有效的服务端截止时间，不受封面缓存延长
         collected_at:
           $ref: '#/components/schemas/UtcTimestamp'
-          description: 本机快照采集时间
+          description: v1本机采集时间；v2为最后已应用事件时刻或基线时刻，不等于playback.at
+        playback:
+          $ref: '#/components/schemas/Playback'
+          description: 仅v2投影在线时存在
     MusicWithArtwork:
       allOf:
         - $ref: '#/components/schemas/Music'
@@ -756,7 +1009,7 @@ components:
           const: 1
         collected_at:
           $ref: '#/components/schemas/UtcTimestamp'
-          description: 本机快照采集时间；在写入时须位于服务端时间正负120秒以内
+          description: v1入口须位于服务端时间正负120秒以内；v2基线等于window_start，投影为最后应用事件或基线时刻
         active_app:
           $ref: '#/components/schemas/NullableAppName'
         running_apps:
@@ -790,7 +1043,7 @@ components:
           description: 服务端接收时间
         expires_at:
           $ref: '#/components/schemas/UtcTimestamp'
-          description: 服务端截止时间；eco 通常为 updated_at 加180秒，realtime 加60秒
+          description: v1通常为eco接收时间加180秒或realtime加60秒；v2批量写入为window_end加600秒
     OnlineStatus:
       allOf:
         - $ref: '#/components/schemas/SnapshotFields'
@@ -802,6 +1055,10 @@ components:
               $ref: '#/components/schemas/UtcTimestamp'
             expires_at:
               $ref: '#/components/schemas/UtcTimestamp'
+              description: v2投影为window_end加420秒；v1为快照有效截止
+            playback:
+              $ref: '#/components/schemas/Playback'
+              description: 仅v2投影在线时存在
       unevaluatedProperties: false
     OfflineStatus:
       type: object

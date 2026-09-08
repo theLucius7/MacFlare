@@ -14,13 +14,14 @@ var BLOCKED_BUNDLE_PREFIXES = [
 ];
 var PRIVACY_FIELDS = ['active_app', 'running_apps', 'battery', 'system', 'music'];
 var PROFILES = {
+  buffered: { interval_seconds: 300, status_ttl_seconds: 600 },
   eco: { interval_seconds: 120, status_ttl_seconds: 180 },
   realtime: { interval_seconds: 30, status_ttl_seconds: 60 }
 };
 
 function profile(value) {
-  if (value !== 'eco' && value !== 'realtime') {
-    throw new Error('profile must be eco or realtime.');
+  if (value !== 'buffered' && value !== 'eco' && value !== 'realtime') {
+    throw new Error('profile must be buffered, eco or realtime.');
   }
   return value;
 }
@@ -49,7 +50,7 @@ function configuration(path) {
     }
   });
   // Existing configurations predate profiles and must retain their 30-second cadence.
-  var result = { endpoint: '', profile: raw === null ? 'eco' : 'realtime', privacy: {}, blocked_apps: [] };
+  var result = { endpoint: '', profile: raw === null ? 'buffered' : 'realtime', privacy: {}, blocked_apps: [] };
   if (input.profile !== undefined) result.profile = profile(input.profile);
   if (input.endpoint !== undefined) {
     if (typeof input.endpoint !== 'string') throw new Error('endpoint must be a string.');
@@ -320,6 +321,7 @@ function enrichArtwork(music, cachePath, temporary, enabled) {
 
 function run(args) {
   var command = args[0];
+  if (command === 'profile') return configuration(args[1]).profile;
   if (command === 'collect') return JSON.stringify(collect(configuration(args[1])));
   if (command === 'music') return JSON.stringify(music(configuration(args[1])));
   if (command === 'artwork') {
@@ -344,6 +346,7 @@ function run(args) {
   if (command === 'schedule-message') {
     var selectedProfile = configuration(args[1]).profile;
     var schedule = PROFILES[selectedProfile];
+    if (selectedProfile === 'buffered') return 'Profile buffered: native event collection, Music reconciliation every 2 seconds, hardware every 30 seconds; upload a 900-second sliding window every 300 seconds to /api/batch.';
     return 'Profile ' + selectedProfile + ': configured to update every ' + schedule.interval_seconds +
       ' seconds; Worker STATUS_TTL_SECONDS must be ' + schedule.status_ttl_seconds + '.';
   }
@@ -355,7 +358,7 @@ function run(args) {
   if (command === 'curl-config') {
     var origin = endpoint(configuration(args[1]).endpoint);
     return [
-      'url = ' + JSON.stringify(origin + '/api/update'),
+      'url = ' + JSON.stringify(origin + (args[4] === 'batch' ? '/api/batch' : '/api/update')),
       'header = ' + JSON.stringify('Authorization: Bearer ' + token(args[2])),
       'header = "Content-Type: application/json"',
       'data-binary = ' + JSON.stringify('@' + args[3]),
@@ -383,8 +386,9 @@ function run(args) {
       '<plist version="1.0"><dict>\n' +
       '<key>Label</key><string>com.macflare.agent</string>\n' +
       '<key>ProgramArguments</key><array><string>/bin/bash</string><string>' + xml(args[1]) +
-      '</string><string>--once</string><string>--config</string><string>' + xml(args[2]) + '</string></array>\n' +
-      '<key>StartInterval</key><integer>' + PROFILES[installedProfile].interval_seconds + '</integer>\n' +
+      '</string><string>' + (installedProfile === 'buffered' ? '--watch' : '--once') + '</string><string>--config</string><string>' + xml(args[2]) + '</string></array>\n' +
+      (installedProfile === 'buffered' ? '<key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>15</integer>\n' :
+        '<key>StartInterval</key><integer>' + PROFILES[installedProfile].interval_seconds + '</integer>\n') +
       '<key>RunAtLoad</key><true/>\n' +
       '<key>LimitLoadToSessionType</key><string>Aqua</string>\n' +
       '<key>ProcessType</key><string>Background</string>\n' +

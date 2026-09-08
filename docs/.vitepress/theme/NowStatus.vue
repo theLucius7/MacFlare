@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { lookupArtwork } from './music-artwork.js';
 import { safeAppleUrl } from '../../../shared/music-artwork.js';
+import { WindowPlayback } from '../../../shared/playback.js';
 import AppIcon from './AppIcon.vue';
 
 const snapshot = ref(null);
@@ -9,16 +10,20 @@ const loading = ref(true);
 const failed = ref(false);
 const clock = ref(Date.now());
 const nextRequest = ref(0);
+const playback = ref({ state: 'offline', snapshot: null });
+const player = new WindowPlayback();
 let timer;
 let controller;
 let disposed = false;
-const online = computed(() => snapshot.value?.status === 'online'
-  && Number.isFinite(Date.parse(snapshot.value.expires_at))
-  && clock.value < Date.parse(snapshot.value.expires_at));
-const data = computed(() => online.value ? snapshot.value : null);
+const online = computed(() => playback.value.state === 'playing');
+const data = computed(() => online.value ? playback.value.snapshot : null);
 const statusText = computed(() => loading.value && !snapshot.value ? '正在读取'
-  : failed.value ? '暂时无法读取' : online.value ? '在线快照' : '当前离线');
-const age = computed(() => data.value ? Math.max(0, Math.floor((clock.value - Date.parse(data.value.updated_at)) / 1000)) : 0);
+  : playback.value.state === 'gap' ? '采集中断'
+  : playback.value.state === 'buffering' ? '正在缓冲'
+  : online.value ? playback.value.mode === 'window' ? '延时直播' : '在线快照' : '当前离线');
+const age = computed(() => snapshot.value ? Math.max(0, Math.floor(((playback.value.serverNow ?? clock.value) - Date.parse(snapshot.value.updated_at)) / 1000)) : 0);
+const replayTime = computed(() => playback.value.at ? new Date(playback.value.at).toLocaleTimeString() : '');
+const delayText = computed(() => `${Math.floor((playback.value.delaySeconds || 0) / 60)} 分 ${(playback.value.delaySeconds || 0) % 60} 秒`);
 const countdown = computed(() => Math.max(0, Math.ceil((nextRequest.value - clock.value) / 1000)));
 const battery = computed(() => data.value?.battery?.percent == null ? '未公开' : `${data.value.battery.percent}%`);
 const power = computed(() => !data.value ? '等待新快照' : data.value.battery.charging ? '正在充电'
@@ -71,21 +76,25 @@ function artworkError() {
 
 async function refresh() {
   if (disposed || document.hidden || controller || Date.now() < nextRequest.value) return;
-  nextRequest.value = Date.now() + 120000;
+  nextRequest.value = Date.now() + 60000;
   loading.value = true;
   controller = new AbortController();
   const timeout = setTimeout(() => controller?.abort(), 12000);
   try {
-    const response = await fetch('/api/now', { cache: 'no-store', signal: controller.signal });
+    const response = await fetch('/api/timeline', { cache: 'no-store', signal: controller.signal });
     if (!response.ok) throw new Error('Status request failed');
     const body = await response.json();
-    if (!['online', 'offline'].includes(body?.status)
-      || (body.status === 'online' && (!Number.isFinite(Date.parse(body.expires_at)) || !body.battery || !body.music || !body.system))) {
-      throw new Error('Invalid status response');
+    if (!disposed) {
+      player.accept(body, performance.now());
+      snapshot.value = player.response;
+      playback.value = player.view(performance.now());
+      failed.value = false;
+      if (player.response?.mode === 'snapshot') nextRequest.value = Date.now() + 120000;
     }
-    if (!disposed) { snapshot.value = body; failed.value = false; }
   } catch {
-    if (!disposed) { snapshot.value = null; failed.value = true; }
+    // A temporary network error does not discard the still-covered portion of
+    // an accepted window. The player itself enforces coverage and expiry.
+    if (!disposed) failed.value = true;
   } finally {
     clearTimeout(timeout);
     controller = null;
@@ -94,6 +103,7 @@ async function refresh() {
 }
 function tick() {
   clock.value = Date.now();
+  playback.value = player.view(performance.now());
   void refresh();
   if (!document.hidden && musicKey.value && artworkRetryAt && clock.value >= artworkRetryAt) {
     artworkRetryAt = 0;
@@ -103,7 +113,7 @@ function tick() {
 onMounted(() => {
   disposed = false;
   tick();
-  timer = setInterval(tick, 1000);
+  timer = setInterval(tick, 250);
   document.addEventListener('visibilitychange', tick);
 });
 onUnmounted(() => {
@@ -118,10 +128,19 @@ onUnmounted(() => {
   <section class="now-panel" aria-label="Mac 当前状态">
     <div class="now-heading">
       <span class="now-status" :class="{ online }" role="status"><i aria-hidden="true" />{{ statusText }}</span>
-      <a href="/api/now" target="_blank" rel="noopener">查看 JSON ↗</a>
+      <a href="/api/timeline" target="_blank" rel="noopener">查看时间窗口 ↗</a>
     </div>
-    <p v-if="failed" class="now-notice">状态接口暂时不可用，稍后将自动重试。</p>
-    <p v-else-if="!online && !loading" class="now-notice">没有新鲜快照。Mac 可能已休眠、停止上报，或更新尚未传播。</p>
+    <p v-if="failed" class="now-notice">连接暂时中断；继续播放缓存中仍被观测覆盖的内容，稍后自动重试。</p>
+    <p v-else-if="playback.warmingSeconds > 0" class="now-notice">正在建立延时窗口，约 {{ playback.warmingSeconds }} 秒后开始回放。首次启动需要积累 7 分钟内容。</p>
+    <p v-else-if="playback.state === 'buffering'" class="now-notice">已播放到窗口末尾，正在等待下一包。收到重叠窗口后会按顺序继续。</p>
+    <p v-else-if="playback.state === 'gap'" class="now-notice">这段时间存在休眠或采集缺口，没有可以展示的状态。</p>
+    <p v-else-if="!online && !loading" class="now-notice">没有有效窗口。Mac 可能已休眠、停止上报，或更新尚未传播。</p>
+    <p v-if="playback.recoveredGap || playback.droppedEvents" class="now-notice">部分内容超出缓存期限或容量，已从最早仍保留的位置恢复。缺失片段不会用旧状态填充。</p>
+    <div v-if="playback.mode === 'window'" class="now-playback">
+      <span>回放时间 <strong>{{ replayTime }}</strong> · 延迟 {{ delayText }}</span>
+      <span>前方缓存 {{ playback.bufferedSeconds }} 秒 · 窗口内 {{ playback.eventCount }} 次变化</span>
+      <a href="/buffering">时间窗口与恢复机制 ↗</a>
+    </div>
     <div class="now-grid">
       <div class="now-metric"><span class="now-label">电池</span><strong>{{ battery }}</strong><span>{{ power }}</span></div>
       <div class="now-metric"><span class="now-label">前台应用</span><div class="now-active-app"><AppIcon :name="data?.active_app || ''" :size="48" :now="clock" /><strong class="now-title">{{ data?.active_app || '未公开' }}</strong></div><span>{{ data?.active_app === 'System' ? '敏感应用已隐藏' : '仅公开应用名称' }}</span></div>
@@ -148,7 +167,7 @@ onUnmounted(() => {
       <p class="now-icon-credit">应用原生图标 · © 各软件作者 · <a href="/api/icons">图标 API</a> · <a href="/app-icons">来源与使用说明</a></p>
     </div>
     <div class="now-footnote">
-      <span>{{ online ? `${age} 秒前收到快照` : '只显示有效期内的数据' }} · {{ loading ? '读取中' : `${countdown} 秒后可刷新` }}</span>
+      <span>{{ online ? `${age} 秒前收到上传` : '只显示已观测且有效的内容' }} · {{ loading ? '读取中' : `${countdown} 秒后可同步` }}</span>
       <button type="button" :disabled="loading || countdown > 0" @click="refresh">刷新</button>
     </div>
   </section>
@@ -161,6 +180,8 @@ onUnmounted(() => {
 .now-status i { width: 8px; height: 8px; border-radius: 50%; background: var(--vp-c-text-3); }
 .now-status.online i { background: #299960; }
 .now-notice { margin: 0; padding: 14px 22px; background: var(--vp-c-brand-soft); font-size: 14px; }
+.now-playback { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 18px; padding: 12px 22px; border-bottom: 1px solid var(--vp-c-divider); color: var(--vp-c-text-2); font-size: 12px; font-variant-numeric: tabular-nums; }
+.now-playback strong { color: var(--vp-c-text-1); }
 .now-grid { display: grid; grid-template-columns: 1fr 1fr; }
 .now-metric { min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 22px; border-bottom: 1px solid var(--vp-c-divider); }
 .now-metric:nth-child(odd) { border-right: 1px solid var(--vp-c-divider); }

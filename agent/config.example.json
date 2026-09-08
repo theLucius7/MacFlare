@@ -1,6 +1,6 @@
 {
   "endpoint": "https://macflare.your-subdomain.workers.dev",
-  "profile": "eco",
+  "profile": "buffered",
   "privacy": {
     "active_app": true,
     "running_apps": true,

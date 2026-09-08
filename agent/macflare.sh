@@ -7,14 +7,19 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 RUNTIME="$SCRIPT_DIR/runtime.js"
 CONFIG="$HOME/Library/Application Support/MacFlare/config.json"
 MODE=push
+OBSERVE_SECONDS=
 
 usage() {
   cat <<'EOF'
-Usage: macflare.sh [--once | --print] [--config PATH]
-  --once         Collect and push one update (the default).
+Usage: macflare.sh [--once | --print | --watch | --observe SECONDS] [--config PATH]
+  --once         Collect and push one snapshot (eco/realtime only; the default).
   --print        Print JSON without pushing to the Worker. Enabled Music may query
                  Apple for artwork; missing config uses defaults and temporary cache.
   --config PATH  Read JSON configuration; the token is in its sibling file "token".
+  --watch        Collect native events continuously and upload a sliding window
+                 every five minutes. Used by the buffered LaunchAgent.
+  --observe SEC  Inspect the buffered collector for 1–300 seconds without uploads.
+                 Prints counts only; its temporary history is deleted on exit.
 EOF
 }
 
@@ -22,6 +27,12 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --once) MODE=push; shift ;;
     --print) MODE=print; shift ;;
+    --watch) MODE=watch; shift ;;
+    --observe)
+      [ "$#" -ge 2 ] || { usage >&2; exit 2; }
+      case "$2" in ''|*[!0-9]*) usage >&2; exit 2 ;; esac
+      [ "$2" -ge 1 ] && [ "$2" -le 300 ] || { usage >&2; exit 2; }
+      MODE=observe; OBSERVE_SECONDS=$2; shift 2 ;;
     --config)
       [ "$#" -ge 2 ] || { usage >&2; exit 2; }
       CONFIG=$2; shift 2 ;;
@@ -42,7 +53,7 @@ private_file() {
   [ "$owner" = "$(/usr/bin/id -u)" ] && [ "$permission" = 600 ]
 }
 
-if [ "$MODE" = push ]; then
+if [ "$MODE" = push ] || [ "$MODE" = watch ]; then
   if ! private_file "$CONFIG" || ! private_file "$TOKEN"; then
     echo 'Configuration and token must be regular files owned by you with mode 600. Run scripts/install.sh.' >&2
     exit 1
@@ -50,6 +61,15 @@ if [ "$MODE" = push ]; then
   /usr/bin/osascript -l JavaScript "$RUNTIME" validate "$CONFIG" "$TOKEN" >/dev/null 2>&1 || {
     echo 'Invalid MacFlare configuration or token. Check config.json and token.' >&2; exit 1;
   }
+  SELECTED_PROFILE=$(/usr/bin/osascript -l JavaScript "$RUNTIME" profile "$CONFIG")
+  if [ "$MODE" = push ] && [ "$SELECTED_PROFILE" = buffered ]; then
+    echo 'The buffered profile uses --watch. Use --print for a snapshot without replacing the public timeline.' >&2
+    exit 1
+  fi
+  if [ "$MODE" = watch ] && [ "$SELECTED_PROFILE" != buffered ]; then
+    echo 'Install with --profile buffered before using --watch.' >&2
+    exit 1
+  fi
 fi
 
 TASK_TEMP=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/macflare.XXXXXX")
@@ -63,6 +83,23 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+
+if [ "$MODE" = watch ] || [ "$MODE" = observe ]; then
+  if [ "$MODE" = watch ]; then
+    [ ! -L "$CONFIG_DIR" ] && [ "$(/usr/bin/stat -f '%Lp' "$CONFIG_DIR")" = 700 ] &&
+      [ "$(/usr/bin/stat -f '%u' "$CONFIG_DIR")" = "$(/usr/bin/id -u)" ] || {
+      echo 'Buffered collection requires a private configuration directory with mode 700.' >&2; exit 1;
+    }
+    # launchd serializes its job, and this OS advisory lock also excludes manual copies.
+    # The lock file is not a stale-PID sentinel; the kernel releases it on process exit.
+  fi
+  /usr/bin/osascript -l JavaScript "$SCRIPT_DIR/window-runtime.js" "$RUNTIME" "$CONFIG" "$TOKEN" "$TASK_TEMP" "$MODE" "$OBSERVE_SECONDS" &
+  CHILD_PID=$!
+  OUTCOME=0
+  wait "$CHILD_PID" || OUTCOME=$?
+  CHILD_PID=
+  exit "$OUTCOME"
+fi
 
 # Music automation can wait on a macOS consent dialog. Bound the subprocess so
 # a denied or unanswered prompt cannot stall the launchd job indefinitely.

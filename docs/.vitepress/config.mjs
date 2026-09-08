@@ -27,7 +27,8 @@ export default defineConfig({
         { text: '本机配置与调度', link: '/configuration' },
       ] },
       { text: '接入与运行', items: [
-        { text: 'HTTP API v1', link: '/api' },
+        { text: 'HTTP API v1 / v2', link: '/api' },
+        { text: '滑动窗口与延时播放', link: '/buffering' },
         { text: '博客与 README 接入', link: '/integrations' },
         { text: '应用图标配置', link: '/app-icons' },
         { text: '免费额度与更新策略', link: '/quotas' },

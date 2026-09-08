@@ -1,10 +1,14 @@
 import installedIcons from "../docs/public/app-icons/index.json" with { type: "json" };
 import { findAppIcon } from "../docs/.vitepress/theme/app-icon-catalog.js";
 import { safeAppleUrl } from "../shared/music-artwork.js";
+import { TIMELINE_POLICY, replayWindow } from "../shared/timeline.js";
 
 const LEGACY_TTL_SECONDS = 60;
 const MAX_TTL_SECONDS = 3600;
 const MAX_BODY_BYTES = 16 * 1024;
+const MAX_BATCH_BYTES = 512 * 1024;
+const BATCH_RETENTION_MS = 600_000;
+const CHANGE_FIELDS = ["active_app", "running_apps", "battery", "system", "music"];
 const MAX_CLOCK_SKEW_MS = 120_000;
 const STATUS_KEY = "now";
 const SLICE_ROUTES = new Set(["/api/music", "/api/apps/active", "/api/apps/running", "/api/device"]);
@@ -62,78 +66,131 @@ function nullableNumber(value, maximum) {
     && value >= 0 && value <= maximum);
 }
 
-function validTimestamp(value, now) {
-  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/u.test(value)) return false;
+function timestampMs(value, strict = false) {
+  if (typeof value !== "string"
+    || !(strict ? /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u
+      : /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/u).test(value)) return NaN;
   const parsed = Date.parse(value);
-  if (!Number.isFinite(parsed) || Math.abs(now - parsed) > MAX_CLOCK_SKEW_MS) return false;
+  if (!Number.isFinite(parsed)) return NaN;
   const canonical = value.includes(".")
     ? value.replace(/\.(\d{1,3})Z$/u, (_, fraction) => `.${fraction.padEnd(3, "0")}Z`)
     : value.replace(/Z$/u, ".000Z");
-  return new Date(parsed).toISOString() === canonical;
+  return new Date(parsed).toISOString() === canonical ? parsed : NaN;
 }
 
-function validateStatus(data, now) {
-  if (!keysMatch(data, ["schema_version", "collected_at", "active_app", "battery", "system", "music"], ["running_apps"])
-    || data.schema_version !== 1
-    || !validTimestamp(data.collected_at, now)
-    || !nullableText(data.active_app, 200)) {
-    throw new ClientError(400, "invalid_payload");
-  }
+function invalidPayload() { throw new ClientError(400, "invalid_payload"); }
 
-  if (Object.hasOwn(data, "running_apps") && (!Array.isArray(data.running_apps)
-    || data.running_apps.length > 64
-    || new Set(data.running_apps).size !== data.running_apps.length
-    || !data.running_apps.every((name) => name !== null && nullableText(name, 200)))) {
-    throw new ClientError(400, "invalid_payload");
+function statusField(name, value) {
+  if (name === "active_app") {
+    if (!nullableText(value, 200)) invalidPayload();
+    return value;
   }
-
-  const { battery, system, music } = data;
-  if (!keysMatch(battery, ["percent", "charging", "power_source"])
-    || !nullableNumber(battery.percent, 100)
-    || !(battery.charging === null || typeof battery.charging === "boolean")
-    || !["ac", "battery", "unknown"].includes(battery.power_source)
-    || !keysMatch(system, ["load_1m", "load_5m", "load_15m"])
-    || !Object.values(system).every((value) => nullableNumber(value, 100_000))
-    || !keysMatch(music, ["state", "track", "artist"], ["artwork_url", "track_url"])
-    || !["playing", "paused", "stopped", "unavailable"].includes(music.state)
-    || !nullableText(music.track, 500)
-    || !nullableText(music.artist, 500)) {
-    throw new ClientError(400, "invalid_payload");
+  if (name === "running_apps") {
+    if (!Array.isArray(value) || value.length > 64 || new Set(value).size !== value.length
+      || !value.every((name) => name !== null && nullableText(name, 200))) invalidPayload();
+    return [...value];
   }
-
-  const hasArtwork = Object.hasOwn(music, "artwork_url");
-  const hasTrackUrl = Object.hasOwn(music, "track_url");
+  if (name === "battery") {
+    if (!keysMatch(value, ["percent", "charging", "power_source"])
+      || !nullableNumber(value.percent, 100)
+      || !(value.charging === null || typeof value.charging === "boolean")
+      || !["ac", "battery", "unknown"].includes(value.power_source)) invalidPayload();
+    return { percent: value.percent, charging: value.charging, power_source: value.power_source };
+  }
+  if (name === "system") {
+    if (!keysMatch(value, ["load_1m", "load_5m", "load_15m"])
+      || !Object.values(value).every((load) => nullableNumber(load, 100_000))) invalidPayload();
+    return { load_1m: value.load_1m, load_5m: value.load_5m, load_15m: value.load_15m };
+  }
+  if (name !== "music" || !keysMatch(value, ["state", "track", "artist"], ["artwork_url", "track_url"])
+    || !["playing", "paused", "stopped", "unavailable"].includes(value.state)
+    || !nullableText(value.track, 500) || !nullableText(value.artist, 500)) invalidPayload();
+  const hasArtwork = Object.hasOwn(value, "artwork_url");
+  const hasTrackUrl = Object.hasOwn(value, "track_url");
   if (hasArtwork !== hasTrackUrl || (hasArtwork
-    && !(music.artwork_url === null && music.track_url === null)
-    && !(typeof music.artwork_url === "string" && typeof music.track_url === "string"
-      && nullableText(music.artwork_url, 2048) && nullableText(music.track_url, 2048)
-      && safeAppleUrl(music.artwork_url, true) && safeAppleUrl(music.track_url, false)
-      && ["playing", "paused"].includes(music.state)
-      && music.track?.trim() && music.artist?.trim()))) {
-    throw new ClientError(400, "invalid_payload");
-  }
-
-  // Construct the stored record explicitly; only protocol fields become public.
+    && !(value.artwork_url === null && value.track_url === null)
+    && !(typeof value.artwork_url === "string" && typeof value.track_url === "string"
+      && nullableText(value.artwork_url, 2048) && nullableText(value.track_url, 2048)
+      && safeAppleUrl(value.artwork_url, true) && safeAppleUrl(value.track_url, false)
+      && ["playing", "paused"].includes(value.state) && value.track?.trim() && value.artist?.trim()))) invalidPayload();
   return {
-    schema_version: 1,
-    collected_at: data.collected_at,
-    active_app: data.active_app,
-    ...(Object.hasOwn(data, "running_apps") ? { running_apps: [...data.running_apps] } : {}),
-    battery: { percent: battery.percent, charging: battery.charging, power_source: battery.power_source },
-    system: { load_1m: system.load_1m, load_5m: system.load_5m, load_15m: system.load_15m },
-    music: {
-      state: music.state, track: music.track, artist: music.artist,
-      ...(hasArtwork ? { artwork_url: music.artwork_url, track_url: music.track_url } : {}),
-    },
+    state: value.state, track: value.track, artist: value.artist,
+    ...(hasArtwork ? { artwork_url: value.artwork_url, track_url: value.track_url } : {}),
   };
 }
 
-async function readJson(request) {
+function validateStatus(data, now, historical = false) {
+  if (!keysMatch(data, ["schema_version", "collected_at", "active_app", "battery", "system", "music"], ["running_apps"])
+    || data.schema_version !== 1) invalidPayload();
+  const collected = timestampMs(data.collected_at);
+  if (!Number.isFinite(collected) || (!historical && Math.abs(now - collected) > MAX_CLOCK_SKEW_MS)) invalidPayload();
+  // Construct only known protocol fields; unrelated local data is never reflected.
+  const result = { schema_version: 1, collected_at: data.collected_at };
+  for (const field of CHANGE_FIELDS) {
+    if (Object.hasOwn(data, field)) result[field] = statusField(field, data[field]);
+  }
+  return result;
+}
+
+export function validateTimeline(data, now) {
+  if (!keysMatch(data, ["schema_version", "session_id", "batch_seq", "generated_at", "window_start", "window_end", "baseline", "events", "gaps", "dropped_events"])
+    || data.schema_version !== 2
+    || typeof data.session_id !== "string"
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u.test(data.session_id)
+    || !Number.isSafeInteger(data.batch_seq) || data.batch_seq < 1
+    || !Number.isSafeInteger(data.dropped_events) || data.dropped_events < 0
+    || !Array.isArray(data.events) || data.events.length > 2048
+    || !Array.isArray(data.gaps) || data.gaps.length > 128) invalidPayload();
+  const generated = timestampMs(data.generated_at, true);
+  const start = timestampMs(data.window_start, true);
+  const end = timestampMs(data.window_end, true);
+  if (![generated, start, end].every(Number.isFinite)
+    || Math.abs(now - generated) > MAX_CLOCK_SKEW_MS
+    || start > end || end - start > TIMELINE_POLICY.window_seconds * 1000
+    || end > generated || generated - end > 30_000) invalidPayload();
+  const baseline = validateStatus(data.baseline, now, true);
+  if (baseline.collected_at !== data.window_start) invalidPayload();
+  let sequence = 0;
+  let previousAt = start;
+  const events = data.events.map((event) => {
+    if (!keysMatch(event, ["seq", "at", "changes"])
+      || !Number.isSafeInteger(event.seq) || event.seq <= sequence
+      || !keysMatch(event.changes, [], CHANGE_FIELDS)
+      || Object.keys(event.changes).length === 0) invalidPayload();
+    const at = timestampMs(event.at, true);
+    if (!Number.isFinite(at) || at < previousAt || at > end) invalidPayload();
+    sequence = event.seq;
+    previousAt = at;
+    const changes = {};
+    for (const field of CHANGE_FIELDS) {
+      if (Object.hasOwn(event.changes, field)) changes[field] = statusField(field, event.changes[field]);
+    }
+    return { seq: event.seq, at: event.at, changes };
+  });
+  let previousEnd = start;
+  const gaps = data.gaps.map((gap) => {
+    if (!keysMatch(gap, ["start_at", "end_at", "reason"])
+      || !["sleep", "restart", "collection", "overflow", "clock"].includes(gap.reason)) invalidPayload();
+    const gapStart = timestampMs(gap.start_at, true);
+    const gapEnd = timestampMs(gap.end_at, true);
+    if (!Number.isFinite(gapStart) || !Number.isFinite(gapEnd)
+      || gapStart < previousEnd || gapEnd > end || gapStart >= gapEnd) invalidPayload();
+    previousEnd = gapEnd;
+    return { start_at: gap.start_at, end_at: gap.end_at, reason: gap.reason };
+  });
+  return {
+    schema_version: 2, session_id: data.session_id, batch_seq: data.batch_seq,
+    generated_at: data.generated_at, window_start: data.window_start, window_end: data.window_end,
+    baseline, events, gaps, dropped_events: data.dropped_events,
+  };
+}
+
+async function readJson(request, maximumBytes = MAX_BODY_BYTES) {
   if (request.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase() !== "application/json") {
     throw new ClientError(415, "unsupported_media_type");
   }
   const length = request.headers.get("Content-Length");
-  if (length !== null && (!/^\d+$/u.test(length) || Number(length) > MAX_BODY_BYTES)) {
+  if (length !== null && (!/^\d+$/u.test(length) || Number(length) > maximumBytes)) {
     throw new ClientError(413, "payload_too_large");
   }
   if (request.headers.get("Content-Encoding") && request.headers.get("Content-Encoding") !== "identity") {
@@ -150,7 +207,7 @@ async function readJson(request) {
       const { value, done } = await reader.read();
       if (done) break;
       total += value.byteLength;
-      if (total > MAX_BODY_BYTES) {
+      if (total > maximumBytes) {
         await reader.cancel();
         throw new ClientError(413, "payload_too_large");
       }
@@ -204,37 +261,66 @@ function timestamps(receivedAt, expiresAt) {
   };
 }
 
-async function currentStatus(env, now, ttlSeconds) {
-  // 30 seconds is KV's minimum edge cache TTL. HTTP caches remain disabled.
+async function currentRecord(env, now, ttlSeconds, completedTime) {
+  // KV cache hits still count as reads; every public data request uses one get.
   const raw = await env.STATUS_KV.get(STATUS_KEY, { type: "text", cacheTtl: 30 });
-  if (raw === null) return { status: "offline" };
+  const completedAt = completedTime();
+  if (raw === null || raw.length > MAX_BATCH_BYTES + 512) return null;
   try {
     const record = JSON.parse(raw);
     if (!keysMatch(record, ["received_at", "data"], ["expires_at"])
-      || !Number.isSafeInteger(record.received_at)
-      || record.received_at <= 0
-      || now < record.received_at) {
-      return { status: "offline" };
+      || !Number.isSafeInteger(record.received_at) || record.received_at <= 0
+      || now < record.received_at || completedAt < record.received_at) return null;
+    if (record.data?.schema_version === 2) {
+      const data = validateTimeline(record.data, record.received_at);
+      const expiresAt = Date.parse(data.window_end) + BATCH_RETENTION_MS;
+      if (record.expires_at !== expiresAt || completedAt >= expiresAt) return null;
+      return { mode: "window", receivedAt: record.received_at, expiresAt, data };
     }
-    // Legacy records were written with a fixed 60-second retention window.
-    // A later deployment must never extend the original stored deadline.
+    // Configuration changes must never revive a legacy snapshot's old deadline.
     const storedExpiresAt = Object.hasOwn(record, "expires_at")
       ? record.expires_at : record.received_at + LEGACY_TTL_SECONDS * 1000;
     const storedTtlMs = storedExpiresAt - record.received_at;
     if (!Number.isSafeInteger(storedExpiresAt)
-      || storedTtlMs < LEGACY_TTL_SECONDS * 1000
-      || storedTtlMs > MAX_TTL_SECONDS * 1000
-      || storedTtlMs % 1000 !== 0) {
-      return { status: "offline" };
-    }
+      || storedTtlMs < LEGACY_TTL_SECONDS * 1000 || storedTtlMs > MAX_TTL_SECONDS * 1000
+      || storedTtlMs % 1000 !== 0) return null;
     const expiresAt = Math.min(storedExpiresAt, record.received_at + ttlSeconds * 1000);
-    if (now >= expiresAt) return { status: "offline" };
-    const data = validateStatus(record.data, record.received_at);
-    return { status: "online", ...timestamps(record.received_at, expiresAt), ...data };
+    if (completedAt >= expiresAt) return null;
+    return {
+      mode: "snapshot", receivedAt: record.received_at, expiresAt,
+      data: validateStatus(record.data, record.received_at),
+    };
   } catch {
     // Corrupt or expired data is never reflected into a public response.
-    return { status: "offline" };
+    return null;
   }
+}
+
+function projectedStatus(record, now) {
+  if (!record || now >= record.expiresAt) return { status: "offline" };
+  if (record.mode === "snapshot") {
+    return { status: "online", ...timestamps(record.receivedAt, record.expiresAt), ...record.data };
+  }
+  const delay = TIMELINE_POLICY.playback_delay_seconds;
+  const replay = replayWindow(record.data, now - delay * 1000);
+  const expiresAt = Date.parse(record.data.window_end) + delay * 1000;
+  // A retained window is not evidence that observation continued beyond its end.
+  if (replay.state !== "playing" || now >= expiresAt) return { status: "offline" };
+  return {
+    status: "online", ...timestamps(record.receivedAt, expiresAt), ...replay.snapshot,
+    playback: { mode: "delayed", delay_seconds: delay, at: replay.at, window_end: record.data.window_end },
+  };
+}
+
+function timelineStatus(record, now) {
+  if (!record || now >= record.expiresAt) return { status: "offline" };
+  if (record.mode === "snapshot") {
+    return { ...projectedStatus(record, now), mode: "snapshot", server_time: new Date(now).toISOString() };
+  }
+  return {
+    status: "online", mode: "window", server_time: new Date(now).toISOString(),
+    ...timestamps(record.receivedAt, record.expiresAt), policy: TIMELINE_POLICY, window: record.data,
+  };
 }
 
 function escapeXml(value) {
@@ -340,6 +426,7 @@ function statusSlice(pathname, status) {
     updated_at: status.updated_at,
     expires_at: status.expires_at,
     collected_at: status.collected_at,
+    ...(status.playback ? { playback: status.playback } : {}),
   };
   if (pathname === "/api/music") {
     return { ...envelope, music: {
@@ -369,9 +456,11 @@ export async function handleRequest(request, env, now = Date.now(), dependencies
     // /api/* is canonical. Legacy paths share the handler without redirects,
     // so installed agents can keep posting their authenticated request bodies.
     const path = pathname.startsWith("/api/") ? pathname.slice(4) : pathname;
-    const method = path === "/update" ? "POST" : "GET";
+    const batch = pathname === "/api/batch";
+    const timeline = pathname === "/api/timeline";
+    const method = path === "/update" || batch ? "POST" : "GET";
     const slice = SLICE_ROUTES.has(pathname);
-    if (!slice && !["/update", "/now", "/badge.svg", "/health"].includes(path)) {
+    if (!slice && !batch && !timeline && !["/update", "/now", "/badge.svg", "/health"].includes(path)) {
       return json({ error: "not_found" }, 404);
     }
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
@@ -381,7 +470,7 @@ export async function handleRequest(request, env, now = Date.now(), dependencies
       return json({ error: "service_unavailable" }, 503);
     }
     const ttlSeconds = statusTtlSeconds(env);
-    if (path === "/update") {
+    if (path === "/update" || batch) {
       if (typeof env.INGEST_TOKEN !== "string" || env.INGEST_TOKEN.length < 32
         || env.INGEST_TOKEN.length > 1024 || /\s/u.test(env.INGEST_TOKEN)) {
         return json({ error: "service_unavailable" }, 503);
@@ -389,19 +478,22 @@ export async function handleRequest(request, env, now = Date.now(), dependencies
       if (!(await authorized(request, env.INGEST_TOKEN))) {
         return json({ error: "unauthorized" }, 401, { "WWW-Authenticate": "Bearer" });
       }
-      const data = validateStatus(await readJson(request), now);
-      const expiresAt = now + ttlSeconds * 1000;
-      await env.STATUS_KV.put(STATUS_KEY, JSON.stringify({ received_at: now, expires_at: expiresAt, data }), { expirationTtl: ttlSeconds });
-      return json({ ok: true, ...timestamps(now, expiresAt) });
+      const body = await readJson(request, batch ? MAX_BATCH_BYTES : MAX_BODY_BYTES);
+      // Streaming a body takes time. Judge batch freshness after it is complete,
+      // then use an absolute KV expiry so slow writes cannot renew retention.
+      const receivedAt = batch ? now + Math.max(0, clock() - startedAt) : now;
+      const data = batch ? validateTimeline(body, receivedAt) : validateStatus(body, receivedAt);
+      const expiresAt = batch ? Date.parse(data.window_end) + BATCH_RETENTION_MS : receivedAt + ttlSeconds * 1000;
+      const expiration = batch ? { expiration: Math.ceil(expiresAt / 1000) } : { expirationTtl: ttlSeconds };
+      await env.STATUS_KV.put(STATUS_KEY, JSON.stringify({ received_at: receivedAt, expires_at: expiresAt, data }), expiration);
+      return json({ ok: true, ...timestamps(receivedAt, expiresAt) });
     }
-    const status = await currentStatus(env, now, ttlSeconds);
-    if (slice) {
-      if (status.status === "offline") return json(status);
-      const result = statusSlice(pathname, status);
-      // A slow KV read must not expose a snapshot after its original deadline.
-      const completedAt = now + Math.max(0, clock() - startedAt);
-      return json(completedAt >= Date.parse(status.expires_at) ? { status: "offline" } : result);
-    }
+    const completedTime = () => now + Math.max(0, clock() - startedAt);
+    const record = await currentRecord(env, now, ttlSeconds, completedTime);
+    const completedAt = completedTime();
+    if (timeline) return json(timelineStatus(record, completedAt));
+    const status = projectedStatus(record, completedAt);
+    if (slice) return json(status.status === "offline" ? status : statusSlice(pathname, status));
     return path === "/badge.svg" ? badge(status) : json(status);
   } catch (error) {
     if (error instanceof ClientError) return json({ error: error.code }, error.status);

@@ -1,6 +1,6 @@
 # 快速开始
 
-完成这份指南后，你会得到自己的状态主页、文档和公开 API，以及登录后自动推送的 Mac Agent。默认采用 **eco：2 分钟更新、3 分钟过期**。
+完成这份指南后，你会得到自己的状态主页、文档和公开 API，以及登录后自动推送的 Mac Agent。默认采用 **buffered：5 分钟上传、15 分钟窗口、正常延时 7 分钟播放**。
 
 ## 准备
 
@@ -18,7 +18,7 @@ npx wrangler login
 npx wrangler kv namespace create STATUS_KV
 ```
 
-将命令返回的命名空间 ID 填入 `wrangler.jsonc`，绑定名保留 `STATUS_KV`。默认 `vars.STATUS_TTL_SECONDS` 为 `"180"`。已有 API Token 时可使用 [非 OAuth 部署方式](deployment.md#使用已有-api-token)。
+将命令返回的命名空间 ID 填入 `wrangler.jsonc`，绑定名保留 `STATUS_KV`。默认 `vars.STATUS_TTL_SECONDS` 为 `"180"`，仅用于兼容 eco 快照；buffered 窗口独立按末尾加 600 秒过期。已有 API Token 时可使用 [非 OAuth 部署方式](deployment.md#使用已有-api-token)。
 
 ## 2. 设置接收令牌并部署
 
@@ -36,7 +36,7 @@ npm run deploy
 
 ```sh
 /bin/bash agent/macflare.sh --print
-/bin/bash scripts/install.sh --endpoint https://<worker>.<subdomain>.workers.dev --profile eco
+/bin/bash scripts/install.sh --endpoint https://<worker>.<subdomain>.workers.dev --profile buffered
 ```
 
 第一条命令只打印真实本机状态。确认这些内容适合公开后再安装，并交互输入相同接收令牌。需要先调整隐私时，在安装命令加 `--no-start`，编辑安装后的 `config.json` 并预览，再运行安装命令启动。
@@ -47,10 +47,10 @@ Music 自动化授权可能显示为 **bash 想要控制 Music**。请在系统�
 
 ```sh
 curl -sS https://<worker>.<subdomain>.workers.dev/api/health
-curl -sS https://<worker>.<subdomain>.workers.dev/api/now
+curl -sS https://<worker>.<subdomain>.workers.dev/api/timeline
 launchctl print "gui/$(id -u)/com.macflare.agent"
 ```
 
-确认 `/api/now` 返回 `online`、电池和应用信息符合预览，随后等待一个更新周期，确认 `updated_at` 改变。Music 正在播放时，核对 `music.track` 与 `music.artist`。KV 可能有传播延迟，不需要每秒重试。
+确认 `/api/timeline` 返回 `mode: "window"`、`window.baseline` 与 `window.events` 包含允许公开的状态；跨过两个 5 分钟上传周期检查 `batch_seq` 和 `window_end` 前进。首次正常约在启动 7 分钟后开始播放；首包到达前可能显示离线，取得窗口后才显示暖机倒计时。首页依事件时间展示应用和歌曲切换，原有 `/api/music` 等接口显示对应延时切片。KV 可能有传播延迟，不需要每秒重试。[时序、缺口与验收边界](buffering.md)
 
 下一步：[嵌入博客或 README](integrations.md) · [节省免费额度](quotas.md) · [停止和卸载](configuration.md#停止与卸载)
