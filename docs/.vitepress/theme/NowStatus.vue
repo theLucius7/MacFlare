@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { lookupArtwork } from './music-artwork.js';
 import { safeAppleUrl } from '../../../shared/music-artwork.js';
 import { WindowPlayback } from '../../../shared/playback.js';
+import { WindowPresentation } from '../../../shared/presentation.js';
 import AppIcon from './AppIcon.vue';
 
 const snapshot = ref(null);
@@ -12,6 +13,7 @@ const clock = ref(Date.now());
 const nextRequest = ref(0);
 const playback = ref({ state: 'offline', snapshot: null });
 const player = new WindowPlayback();
+const presenter = new WindowPresentation();
 let timer;
 let controller;
 let disposed = false;
@@ -87,7 +89,7 @@ async function refresh() {
     if (!disposed) {
       player.accept(body, performance.now());
       snapshot.value = player.response;
-      playback.value = player.view(performance.now());
+      updatePlayback();
       failed.value = false;
       if (player.response?.mode === 'snapshot') nextRequest.value = Date.now() + 120000;
     }
@@ -101,9 +103,13 @@ async function refresh() {
     if (!disposed) { loading.value = false; clock.value = Date.now(); }
   }
 }
+function updatePlayback() {
+  const now = performance.now();
+  playback.value = presenter.view(player.view(now), now, player.response?.window?.session_id);
+}
 function tick() {
   clock.value = Date.now();
-  playback.value = player.view(performance.now());
+  updatePlayback();
   void refresh();
   if (!document.hidden && musicKey.value && artworkRetryAt && clock.value >= artworkRetryAt) {
     artworkRetryAt = 0;
@@ -139,6 +145,7 @@ onUnmounted(() => {
     <div v-if="playback.mode === 'window'" class="now-playback">
       <span>回放时间 <strong>{{ replayTime }}</strong> · 延迟 {{ delayText }}</span>
       <span>前方缓存 {{ playback.bufferedSeconds }} 秒 · 窗口内 {{ playback.eventCount }} 次变化</span>
+      <span>快速切换每 2 秒合并展示 · 原始应用和歌曲变化保留</span>
       <a href="/buffering">时间窗口与恢复机制 ↗</a>
     </div>
     <div class="now-grid">

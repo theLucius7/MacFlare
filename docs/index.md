@@ -8,7 +8,7 @@ import NowStatus from './.vitepress/theme/NowStatus.vue'
 
 # Mac 的延时动态
 
-电池、应用和音乐的公开动态。Mac 每 5 分钟上传最近 15 分钟的变化，通常延时 7 分钟顺序播放；首包到达前等待有效窗口，取得窗口后暖机；缺少覆盖时停止播放。
+电池、应用和音乐的公开动态。Mac 每 5 分钟上传最近 15 分钟的变化，通常延时 7 分钟播放，普通应用／歌曲切换约每 2 秒合并显示，减少闪动；首包到达前等待有效窗口，取得窗口后暖机；缺少覆盖时停止播放。
 
 <NowStatus />
 
@@ -24,7 +24,7 @@ import NowStatus from './.vitepress/theme/NowStatus.vue'
 | 电池与负载 | `/api/device` | `device.battery`、`device.system` |
 | 固定应用图标 | `/api/icons` | 随部署发布的原生 PNG 清单 |
 
-本页每 60 秒只请求一次 `/api/timeline`，其余变化在内存播放。简单页面每轮只读一次 `/api/now`；四个分类接口各自读取一次 KV，不要并行轮询全部入口。封面优先使用 Mac 上报的 URL，缺少有效 URL 时保留浏览器兼容查询。[curl 与图片示例](integrations.md#按需选择接口) · [浏览图标与复制地址](app-icons.md#已发布图标) · [完整 API](api.md)
+本页每 60 秒只请求一次 `/api/timeline`，其余变化在内存播放；短时间连续切换只展示最后候选，时间线 API 中的已有事件保留。敏感遮蔽、清空与断档会立即撤掉旧显示。简单页面每轮只读一次 `/api/now`；四个分类接口各自读取一次 KV，不要并行轮询全部入口。封面优先使用 Mac 上报的 URL，缺少有效 URL 时保留浏览器兼容查询。[curl 与图片示例](integrations.md#按需选择接口) · [浏览图标与复制地址](app-icons.md#已发布图标) · [完整 API](api.md)
 
 ## 在你自己的 Mac 上使用
 

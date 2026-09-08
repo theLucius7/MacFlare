@@ -1,6 +1,6 @@
 # HTTP API v1 / v2
 
-v1 为单个快照，v2 为有界滑动窗口；Worker 基础地址是部署输出的 HTTPS URL。本文示例都是合成数据。机器可读契约见 [OpenAPI 3.1](openapi.yaml)。
+v1 为单个快照，v2 为有界滑动窗口；Worker 基础地址是部署输出的 HTTPS URL。首页的 2 秒普通状态展示合并不作用于这些 API；字段、事件序号及投影语义保持不变。本文示例都是合成数据。机器可读契约见 [OpenAPI 3.1](openapi.yaml)。
 
 ## 路由
 
@@ -44,7 +44,9 @@ v1 为单个快照，v2 为有界滑动窗口；Worker 基础地址是部署输�
 
 v2 时间统一为 `YYYY-MM-DDTHH:mm:ss.sssZ`，精确保留三位毫秒。`window_end <= generated_at`，两者相差最多 30 秒。安全整数上限为 `9007199254740991`。示例中的时间必须更新后才能用于真实请求。
 
-事件 `seq` 为正安全整数、严格递增；`at` 在窗口内且非降序，同一时间的多个事件按 `seq` 排列。`changes` 非空，仅可含 `active_app`、`running_apps`、`battery`、`system`、`music`，使用 v1 对应字段类型，整个字段替换；对象内部不做深合并。例如换歌时 `music` 必须一起提供 `state`、`track`、`artist`，旧封面 URL 不会自动继承。关闭 `running_apps` 后通过新会话中省略该基线字段表示，不以增量 null 删除。
+事件 `seq` 为正安全整数、严格递增；`at` 在窗口内且非降序，同一时间的多个事件按 `seq` 排列。`changes` 非空，仅可含 `active_app`、`running_apps`、`battery`、`system`、`music`，使用 v1 对应字段类型，整个字段替换；对象内部不做深合并。自带 buffered Agent 会保留每次已观测的应用／Music 语义变化，但硬件另按 30 秒采样与阈值合并，并不保留所有微小负载变化；这不改变服务端允许的字段类型或新增拒绝规则。[采集与落盘策略](buffering.md#变化记录落盘与展示)
+
+例如换歌时 `music` 必须一起提供 `state`、`track`、`artist`，旧封面 URL 不会自动继承。关闭 `running_apps` 后通过新会话中省略该基线字段表示，不以增量 null 删除。
 
 缺口 `reason` 只能是 `sleep`、`restart`、`collection`、`overflow`、`clock`。每项必须满足 `window_start <= start_at < end_at <= window_end`，按时间排序且互不重叠；回放中使用半开区间 `[start_at, end_at)`。消费端不能把缺口里的上一条状态继续当成已观测状态。
 
@@ -100,7 +102,7 @@ v2 时间统一为 `YYYY-MM-DDTHH:mm:ss.sssZ`，精确保留三位毫秒。`wind
 }
 ```
 
-此响应示例的 `window` 为便于阅读而省略内容，真实返回完整 v2 包（包含上一节所有字段）。`server_time` 用于客户端校准播放时钟；`online` 表示窗口仍有效，不表示当前目标播放时刻已有覆盖。首次暖机、缺口和覆盖耗尽由客户端结合窗口判断。[推荐播放行为](buffering.md#缓存故障与恢复)
+此响应示例的 `window` 为便于阅读而省略内容，真实返回完整 v2 包（包含上一节所有字段）。`server_time` 用于客户端校准播放时钟；窗口内容不会套用首页的 2 秒视觉合并。`online` 表示窗口仍有效，不表示当前目标播放时刻已有覆盖。首次暖机、缺口和覆盖耗尽由客户端结合窗口判断。[推荐播放行为](buffering.md#缓存故障与恢复)
 
 有效 v1 时返回原 `/api/now` 在线快照，加上 `mode: "snapshot"` 与 `server_time`；原 v1 接口自身不增加这两个字段。没有有效记录时精确返回 `{"status":"offline"}`。KV 错误为 503；断网或暂时旧读取时，播放器可继续使用已校验、未过期且覆盖播放头的内存窗口，不能无限延长最后状态。
 

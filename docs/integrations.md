@@ -60,6 +60,22 @@ const view = player.view(performance.now());
 
 持续使用同一个实例，避免每轮重新建立播放头。状态机处理旧窗口不倒退、短暂网络错误继续消费覆盖、窗口耗尽停播、新会话清旧状态及不可恢复缺口提示；它只保存内存数据。播放延迟在恢复时可超过 420 秒，不能为了追到固定延迟而跳过已缓存变化。[时序与恢复规则](buffering.md)
 
+需要复用首页较平稳的展示节奏时，可再从同一版本复制 [shared/presentation.js](https://github.com/xw7qwq/macflare/blob/main/shared/presentation.js)，作为上述两个文件之外的第三个模块：
+
+```js
+import { WindowPresentation } from './shared/presentation.js';
+const presenter = new WindowPresentation();
+
+// 每次本地渲染检查都复用同一个 presenter，与上面的 player 配合。
+const t = performance.now();
+const exactView = player.view(t);
+const sessionId = player.response?.window?.session_id ?? null;
+const displayView = presenter.view(exactView, t, sessionId);
+// displayView只用于渲染；保留exactView处理精确的回放状态。
+```
+
+`WindowPresentation` 通常每 2 秒最多更新一次应用、Music 与运行列表的普通候选，短时间连续变化仅显示最后一个；不修改 `player` 或原始窗口。敏感遮蔽、字段清空、音乐停止／不可用、运行列表移除、缺口、离线或会话更换会立即清理旧显示，同一曲目的封面补充可以立即显示。合并后的画面只用于渲染，可能组合不同事件的展示值，不能把它作为精确单一时刻的 API 快照发送或保存；需要所有已记录事件的消费者保留上方两个模块的原始回放方式。
+
 ## 读取 JSON
 
 ```sh
