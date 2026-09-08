@@ -11,8 +11,8 @@
 ## 1. 获取项目
 
 ```sh
-git clone https://github.com/theLucius7/MacFlare.git
-cd MacFlare
+git clone https://github.com/xw7qwq/macflare.git
+cd macflare
 npm ci
 npx wrangler login
 npx wrangler kv namespace create STATUS_KV

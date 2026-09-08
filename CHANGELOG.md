@@ -20,6 +20,7 @@
 
 ### Fixed
 
+- 仓库迁移后，CI 徽章、克隆示例、文档编辑和安全报告入口统一指向 `xw7qwq/macflare`。
 - Music 当前曲目或单个元数据字段不可读时，保留已知的播放/暂停状态，缺失字段独立返回 `null`。
 
-计划功能见 [路线图](docs/roadmap.md)，已发生的代码变更见 [提交记录](https://github.com/theLucius7/MacFlare/commits/main/)。
+计划功能见 [路线图](docs/roadmap.md)，已发生的代码变更见 [提交记录](https://github.com/xw7qwq/macflare/commits/main/)。

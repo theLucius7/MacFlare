@@ -14,7 +14,7 @@
 
 ## 配置文件
 
-仓库提供 [示例配置](https://github.com/theLucius7/MacFlare/blob/main/agent/config.example.json)。以下为保留电池、负载、前台应用和音乐、关闭运行应用列表的示例：
+仓库提供 [示例配置](https://github.com/xw7qwq/macflare/blob/main/agent/config.example.json)。以下为保留电池、负载、前台应用和音乐、关闭运行应用列表的示例：
 
 ```json
 {

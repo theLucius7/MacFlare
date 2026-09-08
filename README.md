@@ -2,7 +2,7 @@
 
 **用 macOS 原生工具，将此刻的 Mac 状态推送到 Cloudflare。**
 
-[![CI](https://github.com/theLucius7/MacFlare/actions/workflows/ci.yml/badge.svg)](https://github.com/theLucius7/MacFlare/actions/workflows/ci.yml)
+[![CI](https://github.com/xw7qwq/macflare/actions/workflows/ci.yml/badge.svg)](https://github.com/xw7qwq/macflare/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 [状态与文档](https://macflare.lucius7.dev/) · [快速开始](https://macflare.lucius7.dev/getting-started) · [API](https://macflare.lucius7.dev/api) · [变更记录](CHANGELOG.md) · [安全报告](SECURITY.md)
@@ -45,8 +45,8 @@ eco 比 realtime 少写 **75%**，在免费 KV 每日 1,000 次写入中留出�
 ### 1. 部署自己的 Worker
 
 ```sh
-git clone https://github.com/theLucius7/MacFlare.git
-cd MacFlare
+git clone https://github.com/xw7qwq/macflare.git
+cd macflare
 npm ci
 npx wrangler login
 npx wrangler kv namespace create STATUS_KV

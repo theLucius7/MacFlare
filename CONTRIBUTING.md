@@ -36,7 +36,11 @@ macOS 原生冒烟检查使用开发环境中的 Python 3 驱动测试：`python
 
 ## Pull Request
 
+`main` 是唯一长期开发分支。工作分支从最新 `main` 创建，使用 `feat/<topic>`、`fix/<topic>`、`docs/<topic>` 或 `chore/<topic>` 等短名称；Dependabot 保留其自动生成的分支名。
+
 使用 PR 模板描述问题、触发条件、改变后的行为和已执行验证，关联已有 Issue。协议或配置变化提供迁移说明，涉及采集范围时说明公开数据的增减；修改调度、TTL 或依赖时说明兼容性与用量影响。修改命名或格式的 PR 应保持范围小，不夹带无关重构。
+
+合并前解决冲突和审查意见，确认当前 PR 的 `worker` 与 `macos-agent` 检查全部通过。优先 squash 合并，并使用说明实际变更的标题，例如 `fix: preserve partial Music metadata`。合并后删除已合并的工作分支；未合并分支先核查独有提交，不按分支年龄或名称直接删除。不要通过强推 `main` 或绕过失败检查完成整理。
 
 用户可见变更在 [CHANGELOG](CHANGELOG.md) 的 `Unreleased` 中记录。仅记录已经实现的行为，不把计划当作已发布功能；正式版本由维护者在发布时确认。
 

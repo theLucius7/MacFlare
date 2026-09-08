@@ -18,8 +18,8 @@
 以下使用浏览器 OAuth。已有可用 Cloudflare API Token 时，完成克隆和 `npm ci` 后，可跳过 `login`、`whoami`，改用下一节的环境变量方式，无需再次授予 OAuth。
 
 ```sh
-git clone https://github.com/theLucius7/MacFlare.git
-cd MacFlare
+git clone https://github.com/xw7qwq/macflare.git
+cd macflare
 npm ci
 npx wrangler login
 npx wrangler whoami

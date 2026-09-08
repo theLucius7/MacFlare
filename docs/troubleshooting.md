@@ -85,4 +85,4 @@ curl -i https://<worker>.<subdomain>.workers.dev/api/now
 
 ## 报告问题
 
-提供系统版本、MacFlare 版本、问题发生在手动还是后台、HTTP 状态码和脱敏错误。应用隐私、令牌泄漏或漏洞请遵循 [安全报告流程](https://github.com/theLucius7/MacFlare/blob/main/SECURITY.md)，不要直接公开真实快照。
+提供系统版本、MacFlare 版本、问题发生在手动还是后台、HTTP 状态码和脱敏错误。应用隐私、令牌泄漏或漏洞请遵循 [安全报告流程](https://github.com/xw7qwq/macflare/blob/main/SECURITY.md)，不要直接公开真实快照。

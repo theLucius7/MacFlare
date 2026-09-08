@@ -13,7 +13,7 @@
 
 ## 配置固定映射
 
-编辑 [config/app-icons.json](https://github.com/theLucius7/MacFlare/blob/main/config/app-icons.json)。默认列出 12 个应用，最多配置 32 项；实际可用图标以导出清单为准。
+编辑 [config/app-icons.json](https://github.com/xw7qwq/macflare/blob/main/config/app-icons.json)。默认列出 12 个应用，最多配置 32 项；实际可用图标以导出清单为准。
 
 ```json
 {
@@ -53,7 +53,7 @@ npm run icons:export -- --dry-run
 npm run icons:export
 ```
 
-[导出脚本](https://github.com/theLucius7/MacFlare/blob/main/scripts/export-app-icons.py) 使用开发阶段的 Python 3 与系统 JXA、`sips` 工具，不使用 macOSicons Key，也不增加生产 Agent 的运行依赖。普通站点构建不会扫描已安装应用。`--dry-run` 只检查配置中的应用是否存在，不导出或修改文件；应用缺失时导出停止并保留现有输出，先调整配置或安装目标应用。
+[导出脚本](https://github.com/xw7qwq/macflare/blob/main/scripts/export-app-icons.py) 使用开发阶段的 Python 3 与系统 JXA、`sips` 工具，不使用 macOSicons Key，也不增加生产 Agent 的运行依赖。普通站点构建不会扫描已安装应用。`--dry-run` 只检查配置中的应用是否存在，不导出或修改文件；应用缺失时导出停止并保留现有输出，先调整配置或安装目标应用。
 
 生成文件位于 `docs/public/app-icons/<id>.png` 和 `docs/public/app-icons/index.json`。检查图标、应用名称、别名与版权后，将需要公开的 PNG 和清单一同提交，再运行 `npm run deploy`。首次克隆可直接构建已有的仓库图标，无需重新导出或第三方 Key。应用图标更新后，重新导出并发布即可。
 
