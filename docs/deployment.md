@@ -95,6 +95,21 @@ Worker 的 Custom Domain 同时服务主页、文档和 `/api/*`，无需另外�
 
 不要删除 `assets.run_worker_first` 中的 API 规则，否则文档导航请求可能误吞 API。部署后验证 `/` 是 HTML、`/api/now` 是 JSON、`/api/badge.svg` 是 SVG、未知 `/api/*` 返回 JSON 404。
 
+## 升级音乐封面上报
+
+先部署接受可选音乐 URL 的 Worker，再更新本机代码。旧 Worker 严格拒绝未知字段，倒置顺序可能让新 Agent 的上传返回 `400 invalid_payload`；新 Worker 仍接受不含 URL 的旧快照。
+
+```sh
+# 在仓库最新代码上先部署云端。
+npm ci
+npm run deploy
+
+# 再更新当前用户的 Agent 副本，复用已有配置与令牌。
+/bin/bash scripts/install.sh
+```
+
+保持 Music 播放可提供元数据的歌曲，等待一个后台周期后按需检查 `/api/music`。歌名、歌手存在而 URL 为 `null` 时，可能尚未更新 Agent、本机搜索失败或美国商店没有可信匹配；Worker 本身不会补搜。需要完整状态时使用 `/api/now`，避免每轮并行读取所有分类接口。[封面排查](troubleshooting.md#有歌名但首页没有封面)
+
 ## 安装与现场验收
 
 先查看待公开的真实采集内容：
@@ -117,7 +132,7 @@ Worker 的 Custom Domain 同时服务主页、文档和 `/api/*`，无需另外�
 2. 无 Bearer 的 `POST /api/update` 返回 401，确保未开放匿名写入。
 3. 手动执行 Agent 单次推送，确认成功；再请求 `/api/now`，核对电量、应用名称和快照时间。KV 跨位置传播可能延迟，不应每秒密集重试。
 4. 观察至少两个后台调度周期，确认 `updated_at` 有变化；一次手动成功不能证明 LaunchAgent 有效。
-5. Music 正在播放时，分别验证手动采集与后台周期中的歌名、歌手；暂停、退出和拒绝授权分别检查降级语义。后台自动化授权主体可能显示为 **bash**，需用户允许它控制 Music，不能用前台成功代替后台验证。见 [Music 授权排查](troubleshooting.md#music-状态为空或不可用)。
+5. Music 正在播放时，分别验证手动采集与后台周期中的歌名、歌手；升级 Agent 后还可检查成对封面 URL，未匹配时为空不影响其他状态；暂停、退出和拒绝授权分别检查降级语义。后台自动化授权主体可能显示为 **bash**，需用户允许它控制 Music，不能用前台成功代替后台验证。见 [Music 授权排查](troubleshooting.md#music-状态为空或不可用)。
 6. 停止后台任务，等待超过响应中的 `expires_at`（eco 约 180 秒，realtime 60 秒），再直接请求 `/api/now`，应为 offline。GitHub 徽章缓存不用于此验收。
 7. 按需重新安装启用后台，并记录实际验证日期、版本和未解决问题。
 

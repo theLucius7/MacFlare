@@ -16,7 +16,7 @@ MacFlare 为个人博客、Now Page 和 GitHub README 提供 Apple Music 歌曲�
 | 功能 | 行为 |
 | --- | --- |
 | Apple Music | 播放／暂停／停止、歌名和歌手；未授权时独立降级 |
-| 首页歌曲封面 | 访客浏览器查询 Apple，仅显示可信匹配的封面并链接歌曲页面；无匹配时保留文字状态 |
+| 首页歌曲封面 | 优先使用 Mac 查询并上报的 Apple 封面；缺少有效 URL 时保留浏览器兼容查询 |
 | 应用状态 | 前台应用和 GUI 应用列表；不采集窗口标题、路径或进程参数 |
 | 应用图标 | 仓库内原生 PNG、公开图片 API 与静态直链；可选 macOSicons 补充，未知应用使用占位 |
 | 硬件状态 | 电量、充电、供电来源和系统负载平均值 |
@@ -25,7 +25,7 @@ MacFlare 为个人博客、Now Page 和 GitHub README 提供 Apple Music 歌曲�
 | 边缘接口 | Bearer 写入、完整快照与音乐／应用／设备分类查询、SVG 徽章、自动过期 |
 | 同站点文档 | 首页展示实时快照，文档静态托管，API 使用 `/api/*` |
 
-首页封面查询仅使用公开歌名和歌手，直接请求 Apple 搜索服务与图片 CDN；不增加 Cloudflare KV 操作，也不改变 `/api/now` 字段。美国商店无可信匹配时显示占位，收到停止状态或快照过期后撤掉封面。[封面隐私与缓存](docs/privacy.md#首页歌曲封面)
+Mac 使用原生 `curl` 查询 Apple 公开目录，可信匹配的封面与歌曲 URL 随原有快照一次推送，作为 `music` 的可选字段，不增加 KV 写入次数。Worker 只验证和返回上报内容，不查询 Apple。首页优先显示上报封面，缺少有效 URL 时保留浏览器查询；无可信匹配时显示占位，停止或过期后撤掉封面。[封面隐私与缓存](docs/privacy.md#首页歌曲封面)
 
 应用图标优先使用从已安装应用导出的 PNG，随有限清单提交到仓库并发布。`GET /api/icons` 返回清单，`/api/icons/<id>.png` 可直接作为图片地址；首页使用无需执行 Worker 的 `/app-icons/<id>.png` 静态路径。原生图标无需第三方 Key、没有 30 天到期限制，也不依赖 Mac 在线或 KV。macOSicons 仍可作为部署前同步的可选补充，其响应缓存单独遵守 30 天限制。[导出、接入与版权说明](docs/app-icons.md)
 
@@ -81,14 +81,16 @@ curl -sS https://<worker>.<subdomain>.workers.dev/api/now
 
 | 按需查询 | 地址 | 在线主要内容 |
 | --- | --- | --- |
-| 完整状态，组合页面推荐 | `/api/now` | 一次获取原始快照，协议保持不变 |
+| 完整状态，组合页面推荐 | `/api/now` | 一次获取快照；原有字段保留，音乐可附成对封面／歌曲 URL |
 | 音乐 | `/api/music` | 播放状态、歌名、歌手、可空的 Apple 封面／歌曲 URL |
 | 前台应用 | `/api/apps/active` | 应用名、静态图标与图片 API 地址 |
 | 运行应用 | `/api/apps/running` | 应用对象数组；未采集为 `null` |
 | 设备 | `/api/device` | 电池与系统负载 |
 
-每个状态 GET 都读取一次 KV；需要多类数据时只请求一次 `/api/now`，不要并行轮询全部分类接口。音乐分类接口由 Worker 匹配 Apple 公开目录；首页继续直接在浏览器查询封面，不额外调用 `/api/music`。[常用 curl 与图片示例](docs/integrations.md#按需选择接口)
+每个状态 GET 都读取一次 KV；需要多类数据时只请求一次 `/api/now`，不要并行轮询全部分类接口。音乐分类接口直接返回 Mac 上报的 URL，旧 Agent 未上报时返回 `null`；首页不额外调用 `/api/music`。[常用 curl 与图片示例](docs/integrations.md#按需选择接口)
 
+
+更新已有部署时，**先发布支持可选音乐 URL 的 Worker，再重新安装 Mac Agent**；旧 Worker 会拒绝新增字段。更新步骤见 [部署指南](docs/deployment.md#升级音乐封面上报)。
 
 ## 已部署实例
 

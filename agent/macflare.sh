@@ -12,7 +12,8 @@ usage() {
   cat <<'EOF'
 Usage: macflare.sh [--once | --print] [--config PATH]
   --once         Collect and push one update (the default).
-  --print        Print local JSON without sending it; missing config uses defaults.
+  --print        Print JSON without pushing to the Worker. Enabled Music may query
+                 Apple for artwork; missing config uses defaults and temporary cache.
   --config PATH  Read JSON configuration; the token is in its sibling file "token".
 EOF
 }
@@ -91,6 +92,21 @@ if ! run_bounded 6 /usr/bin/osascript -l JavaScript "$RUNTIME" collect "$CONFIG"
 fi
 if ! run_bounded 5 /usr/bin/osascript -l JavaScript "$RUNTIME" music "$CONFIG" >"$TASK_TEMP/music.json" 2>/dev/null; then
   printf '%s\n' '{"state":"unavailable","track":null,"artist":null}' >"$TASK_TEMP/music.json"
+fi
+# Persist only one current-song lookup, beside an existing private configuration.
+# A config-less --print uses the temporary directory and creates no installation.
+ARTWORK_CACHE="$TASK_TEMP/artwork-cache.json"
+if private_file "$CONFIG" && [ ! -L "$CONFIG_DIR" ] &&
+  [ "$(/usr/bin/stat -f '%Lp' "$CONFIG_DIR")" = 700 ] &&
+  [ "$(/usr/bin/stat -f '%u' "$CONFIG_DIR")" = "$(/usr/bin/id -u)" ]; then
+  if [ ! -e "$CONFIG_DIR/artwork-cache.json" ] && [ ! -L "$CONFIG_DIR/artwork-cache.json" ] ||
+    private_file "$CONFIG_DIR/artwork-cache.json"; then
+    ARTWORK_CACHE="$CONFIG_DIR/artwork-cache.json"
+  fi
+fi
+# Apple's request has its own five-second timeout; bound native parsing as well.
+if run_bounded 8 /usr/bin/osascript -l JavaScript "$RUNTIME" artwork "$TASK_TEMP/music.json" "$ARTWORK_CACHE" "$TASK_TEMP" "$CONFIG" >"$TASK_TEMP/enriched-music.json" 2>/dev/null; then
+  /bin/mv -f -- "$TASK_TEMP/enriched-music.json" "$TASK_TEMP/music.json"
 fi
 /usr/bin/osascript -l JavaScript "$RUNTIME" merge "$TASK_TEMP/base.json" "$TASK_TEMP/music.json" >"$TASK_TEMP/payload.json"
 

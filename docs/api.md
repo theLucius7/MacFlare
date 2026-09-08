@@ -26,7 +26,7 @@
 
 ## POST /api/update
 
-请求必须为未压缩 UTF-8 JSON，`Content-Type: application/json`（可带 charset），正文最大 **16,384 字节**。除下述可选 `running_apps` 外字段均必需；所有层级拒绝未知字段。未启用或不可用的指标必须按字段约定提供空值，不用虚假数值代替。
+请求必须为未压缩 UTF-8 JSON，`Content-Type: application/json`（可带 charset），正文最大 **16,384 字节**。除 `running_apps` 与下述成对可选的音乐 URL 外，其余字段均必需；所有层级拒绝未知字段。未启用或不可用的指标必须按字段约定提供空值，不用虚假数值代替。
 
 ```json
 {
@@ -57,8 +57,14 @@
 | `music.state` | `playing`、`paused`、`stopped`、`unavailable` | 播放中、暂停、停止（含 Music 未运行）、状态不可读或采集已禁用 |
 | `music.track` | `string` 或 `null`；1–500 字符 | 当前曲目名称 |
 | `music.artist` | `string` 或 `null`；1–500 字符 | 当前歌手 |
+| `music.artwork_url` | 可选 `string` 或 `null`；最长 2048 字符 | Apple 封面 HTTPS URL；须与 `track_url` 成对 |
+| `music.track_url` | 可选 `string` 或 `null`；最长 2048 字符 | Apple 歌曲页面 HTTPS URL；须与 `artwork_url` 成对 |
 
 长度按 Unicode 码点计算。文本不允许 ASCII 控制字符 `U+0000`–`U+001F` 和 `U+007F`；数字必须有限。Music 状态与元数据独立：已读取到 `playing` 或 `paused` 时，即使当前曲目对象不存在，仍保留该状态并将 `track`、`artist` 设为 `null`；单个元数据字段读取失败时，仅该字段为 `null`。权限不足或播放器状态本身不可读时返回 `unavailable`。暂停时也可保留当前曲目，消费端应依据 `state` 判断是否正在播放，不应仅依据 `track` 非空。
+
+音乐 URL 的合法形式仅有三种：两字段都省略、两字段都为 `null`、两字段都为字符串。非空 URL 仅允许 `playing`／`paused`，且 `track`、`artist` 去除首尾空白后均非空。URL 长度按 Unicode 码点计，最多 2048；不含首尾空白、ASCII 控制字符、用户信息或非默认端口。协议必须为 HTTPS（按 URL 标准处理大小写，显式 443 可用）；封面域名必须是 `mzstatic.com` 的子域，歌曲页面必须是 `itunes.apple.com` 或 `music.apple.com`。违反配对、播放状态或 URL 规则时返回 `400 invalid_payload`。
+
+Mac Agent 使用公开歌名和歌手查询 Apple，并严格匹配曲目后上报 URL；Worker 负责字段及 URL 边界校验，不再次向 Apple 查询。旧 Agent 可以继续省略两个 URL。更新已有部署时必须 [先部署 Worker 再更新 Agent](deployment.md#升级音乐封面上报)，因为旧 Worker 会拒绝新字段。
 
 成功返回 HTTP 200：
 
@@ -75,6 +81,8 @@
 ## GET /api/now
 
 新鲜快照返回 HTTP 200，顶层增加 `status`、`updated_at` 和 `expires_at`：
+
+`music.artwork_url` 与 `music.track_url` 仅在 Agent 上报时出现；下面保留未上报 URL 的兼容示例。
 
 ```json
 {
@@ -105,7 +113,7 @@ KV 不可用与没有记录不同：存储访问失败返回 503。客户端应�
 
 以下四个接口在线时共有 `status: "online"`、`updated_at`、`expires_at`、`collected_at`，时间含义与 `/api/now` 相同。没有新鲜快照时，HTTP 200 正文精确为 `{"status":"offline"}`，不附带对应数据字段。KV 访问失败返回 503；不要把失败当成离线。
 
-全部公开、无需 Bearer，支持 GET 和 OPTIONS 204，HEAD 返回 405；状态响应使用 `no-store` 与 CORS `*`。每次 GET 只读取一次 KV，不写入或刷新快照。`/api/now` 的原有字段、类型与缺省行为完全保留，下面的图标和封面字段只出现在对应分类接口中。
+全部公开、无需 Bearer，支持 GET 和 OPTIONS 204，HEAD 返回 405；状态响应使用 `no-store` 与 CORS `*`。每次 GET 只读取一次 KV，不写入或刷新快照。`/api/now` 保留原有必需字段与类型；Agent 上报 URL 时，`music` 增加这两个可选字段，未上报时仍省略。图标对象字段仅出现在对应应用分类接口中。
 
 ### GET /api/music
 
@@ -125,9 +133,9 @@ KV 不可用与没有记录不同：存储访问失败返回 503。客户端应�
 }
 ```
 
-`state`、`track`、`artist` 保留采集值与原有空值语义。在线快照新鲜、`playing` 或 `paused` 且歌名歌手齐全时，Worker 使用公开曲名向 Apple iTunes Search API 查询，参数固定为 `country=us`、`entity=song`、`limit=5`。标题和艺人经过严格规范化匹配后，才返回经检查的 HTTPS `artwork_url` 与 `track_url`；没有可信匹配、搜索失败或 URL 不安全时为 `null`，不会清空已有曲名。美国商店没有结果时不盲选其他歌曲。[Apple 查询参数](https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/Searching.html)
+`state`、`track`、`artist` 保留采集值与原有空值语义。`artwork_url` 与 `track_url` 来自已通过验证的上报快照；此接口始终返回两个字段，旧 Agent 没有上报时均为 `null`。搜索失败或没有可信匹配不会清空原有曲名。
 
-服务器只缓存公开目录的匹配结果，不缓存设备状态或写入 KV。成功结果最多复用 1 小时，未匹配或失败结果最多复用 5 分钟；边缘节点可提前淘汰，不能保证不同节点命中同一缓存。Apple 查询阶段限时 4.5 秒，接口总耗时还包括 KV 与缓存访问；返回前会再次检查快照截止时间。缓存有效不表示 Mac 在线，响应仍以当前快照的新鲜度为准。[隐私与缓存](privacy.md#音乐-api-封面查询)
+Worker 不向 Apple 发起请求，不使用 Cache API 缓存封面，也不刷新状态 TTL。Mac 查询与缓存当前曲目后，将 URL 随原有快照一起推送；其缓存不会延长设备在线期限。页面拿到非空 URL 后再向 Apple 图片 CDN 请求封面。[数据流与隐私](privacy.md#音乐-api-与封面上报) · [本机缓存](configuration.md#音乐封面与本机缓存)
 
 ### GET /api/apps/active
 
