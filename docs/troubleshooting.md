@@ -26,7 +26,7 @@ curl -i https://<worker>.<subdomain>.workers.dev/now
 - 确认使用的是 Apple 的 `Music.app`，并且正在播放可提供曲目元数据的歌曲。网页播放器和其他音乐软件不属于当前采集范围。
 - 本地配置若关闭 `privacy.music`，不读取 Music。
 - 首次在终端执行 `--print` 时处理 macOS 自动化弹窗。进入“系统设置 → 隐私与安全性 → 自动化”检查对应终端或脚本宿主的 Music 权限。[Apple 授权说明](https://support.apple.com/en-gb/guide/mac-help/mchl108e1718/mac)
-- 终端运行成功、后台失败时，检查 `launchd` 执行上下文是否得到相应授权。不要用全盘访问或关闭系统保护替代正确的自动化权限。
+- 后台由 `/bin/bash` 启动 `osascript`，macOS 的自动化弹窗或权限列表可能将授权主体显示为 **bash**。要启用后台音乐采集，需用户允许 **bash 控制 Music**；仅允许终端控制 Music 或手动采集成功，不能替代这项后台授权。授权后保持 Music 播放，等待后续后台周期，再检查 `/now` 中的音乐状态。不要用全盘访问或关闭系统保护替代自动化权限。
 - 拒绝授权、Music 未运行或元数据不可用时，按接口状态降级；这不应阻止电池和应用等独立指标上传。
 
 ## 看不到前台或运行中的应用
