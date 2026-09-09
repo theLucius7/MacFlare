@@ -17,7 +17,8 @@
       "id": "clash-verge",
       "app": "Clash Verge",
       "aliases": [
-        "Clash Verge"
+        "Clash Verge",
+        "clash-verge"
       ],
       "imageUrl": "/api/icons/clash-verge.png",
       "source": "installed-app",
@@ -55,7 +56,8 @@
       "id": "ghostty",
       "app": "Ghostty",
       "aliases": [
-        "Ghostty"
+        "Ghostty",
+        "ghostty"
       ],
       "imageUrl": "/api/icons/ghostty.png",
       "source": "installed-app",
@@ -131,7 +133,8 @@
       "id": "safari",
       "app": "Safari",
       "aliases": [
-        "Safari"
+        "Safari",
+        "Safari浏览器"
       ],
       "imageUrl": "/api/icons/safari.png",
       "source": "installed-app",
@@ -144,7 +147,8 @@
       "app": "Zen",
       "aliases": [
         "Zen",
-        "Zen Browser"
+        "Zen Browser",
+        "zen"
       ],
       "imageUrl": "/api/icons/zen.png",
       "source": "installed-app",
@@ -361,7 +365,8 @@
       "id": "tv",
       "app": "TV",
       "aliases": [
-        "TV"
+        "TV",
+        "Apple TV"
       ],
       "imageUrl": "/api/icons/tv.png",
       "source": "installed-app",
@@ -567,6 +572,767 @@
       "credit": "应用图标版权归原作者",
       "sourceUrl": null,
       "sha256": "93cca47c61c21444a868ddd32105e52e902ac355189a58613155f949cc54943d"
+    },
+    {
+      "id": "airport-utility",
+      "app": "AirPort Utility",
+      "aliases": [
+        "AirPort Utility"
+      ],
+      "imageUrl": "/api/icons/airport-utility.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "4b4e199111b046cb856049912b9c65090e0a4e2aaabc85544a7768b0082cbc77"
+    },
+    {
+      "id": "apps",
+      "app": "Apps",
+      "aliases": [
+        "Apps"
+      ],
+      "imageUrl": "/api/icons/apps.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "354dbeb41fc9b3c0fd582444a13a2685ecf826a2e755009e32fdcf075cdba81e"
+    },
+    {
+      "id": "audio-midi-setup",
+      "app": "Audio MIDI Setup",
+      "aliases": [
+        "Audio MIDI Setup"
+      ],
+      "imageUrl": "/api/icons/audio-midi-setup.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "1cc9d37bd804fca7ee219117335abdb36a5194cab263e753b64205a406048839"
+    },
+    {
+      "id": "automator",
+      "app": "Automator",
+      "aliases": [
+        "Automator"
+      ],
+      "imageUrl": "/api/icons/automator.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "1b47bf328207af3d2900af71467bc2f7270e2d5e5f8fcb99a6c434c55a10a93a"
+    },
+    {
+      "id": "bibdesk",
+      "app": "BibDesk",
+      "aliases": [
+        "BibDesk"
+      ],
+      "imageUrl": "/api/icons/bibdesk.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "0b6af4901efbf055932d0c17fc030b2dc33f459b50949ad84011a68d85e33d53"
+    },
+    {
+      "id": "bluetooth-file-exchange",
+      "app": "Bluetooth File Exchange",
+      "aliases": [
+        "Bluetooth File Exchange"
+      ],
+      "imageUrl": "/api/icons/bluetooth-file-exchange.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "1a65966a7c3b6ec4cae02594ae8719bff2d51f690042b5abc4373db1fb9554b6"
+    },
+    {
+      "id": "books",
+      "app": "Books",
+      "aliases": [
+        "Books"
+      ],
+      "imageUrl": "/api/icons/books.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "b6dc4f5fe344245e69f3d55e0baa26428c7593c07926abb4335ec546ee6e892f"
+    },
+    {
+      "id": "boot-camp-assistant",
+      "app": "Boot Camp Assistant",
+      "aliases": [
+        "Boot Camp Assistant"
+      ],
+      "imageUrl": "/api/icons/boot-camp-assistant.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "bb4da3a02a23213b350b951060ebfcca97a6a19f7a98454688397b08c588c3aa"
+    },
+    {
+      "id": "cc-switch",
+      "app": "CC Switch",
+      "aliases": [
+        "CC Switch",
+        "cc-switch"
+      ],
+      "imageUrl": "/api/icons/cc-switch.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "6b644f4a0f83c8f4ce373322560e56915dc0697b2e1be48c5176a65b4b32895c"
+    },
+    {
+      "id": "chess",
+      "app": "Chess",
+      "aliases": [
+        "Chess"
+      ],
+      "imageUrl": "/api/icons/chess.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "1595a381ea91edd54d6631b5c9a4abcfbec10fb2d4dc1c082f859c164af16a8b"
+    },
+    {
+      "id": "clock",
+      "app": "Clock",
+      "aliases": [
+        "Clock"
+      ],
+      "imageUrl": "/api/icons/clock.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "60638a3d3e3c912fbce2aeeb32fc52414644b6e0155f627b6102e9438cfa2bca"
+    },
+    {
+      "id": "colorsync-utility",
+      "app": "ColorSync Utility",
+      "aliases": [
+        "ColorSync Utility"
+      ],
+      "imageUrl": "/api/icons/colorsync-utility.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "803bbd73dc8fba454aff5f715687dc4978ca3a5cc91f7f02bd17b304507cf93f"
+    },
+    {
+      "id": "console",
+      "app": "Console",
+      "aliases": [
+        "Console"
+      ],
+      "imageUrl": "/api/icons/console.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "64eaf69ccc1348d8beb7c586cf4a9dc0f392fdaecbc0ba4e333e571f561a6314"
+    },
+    {
+      "id": "contacts",
+      "app": "Contacts",
+      "aliases": [
+        "Contacts"
+      ],
+      "imageUrl": "/api/icons/contacts.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "6b772736a4a8217652a2db572daacaee7e6eb592a9adf77686f0b2985d7b2224"
+    },
+    {
+      "id": "dictionary",
+      "app": "Dictionary",
+      "aliases": [
+        "Dictionary"
+      ],
+      "imageUrl": "/api/icons/dictionary.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "6cee8592347ab3e15531a68c392460714ecceba2671060ea596f19c59f6c870b"
+    },
+    {
+      "id": "digital-color-meter",
+      "app": "Digital Color Meter",
+      "aliases": [
+        "Digital Color Meter"
+      ],
+      "imageUrl": "/api/icons/digital-color-meter.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "0a9f5a0b0f9d0d5be55c631898b142a57e8ad88279667eeaae1a4f3359f4637b"
+    },
+    {
+      "id": "disk-utility",
+      "app": "Disk Utility",
+      "aliases": [
+        "Disk Utility"
+      ],
+      "imageUrl": "/api/icons/disk-utility.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "9058da1a90e9ed57764c6151b9f2749642d11d4aa9e1ad11e4579076b445a002"
+    },
+    {
+      "id": "facetime",
+      "app": "FaceTime",
+      "aliases": [
+        "FaceTime"
+      ],
+      "imageUrl": "/api/icons/facetime.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "b09d6afa94e81356a60e8b84d446d0cb5b828d52257d1e993c816f998fdcca3a"
+    },
+    {
+      "id": "fastvpn",
+      "app": "FastVPN",
+      "aliases": [
+        "FastVPN"
+      ],
+      "imageUrl": "/api/icons/fastvpn.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "98a96c398ea064326b9fd5081a1ece66bff3764c0b102ba5cb16bebcad4969ca"
+    },
+    {
+      "id": "find-my",
+      "app": "Find My",
+      "aliases": [
+        "Find My",
+        "FindMy"
+      ],
+      "imageUrl": "/api/icons/find-my.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "9ed3270e3caf5a18354a6ee68f51612ad038f64ef26c0313a9df3cda115207eb"
+    },
+    {
+      "id": "font-book",
+      "app": "Font Book",
+      "aliases": [
+        "Font Book"
+      ],
+      "imageUrl": "/api/icons/font-book.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "05a57fd2b8fba8ace58fa034fe4c4a3ba1b1c93ec70f6e08760cb279921dc6ac"
+    },
+    {
+      "id": "freeform",
+      "app": "Freeform",
+      "aliases": [
+        "Freeform"
+      ],
+      "imageUrl": "/api/icons/freeform.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "dcda937fc5ed9e9c7dca30ef563131f97bbdc89fa529e7300a8dff41a6bbe8e3"
+    },
+    {
+      "id": "google-docs",
+      "app": "Google Docs",
+      "aliases": [
+        "Google Docs"
+      ],
+      "imageUrl": "/api/icons/google-docs.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "bd424e99a55942ee0aa26d1111a10e3a88254d23656d663ba295709515503c1f"
+    },
+    {
+      "id": "google-sheets",
+      "app": "Google Sheets",
+      "aliases": [
+        "Google Sheets"
+      ],
+      "imageUrl": "/api/icons/google-sheets.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "3b3bf791c8dcf978b2cd6c3fb4042c149949dc51e3859d26eea603662f9da625"
+    },
+    {
+      "id": "google-slides",
+      "app": "Google Slides",
+      "aliases": [
+        "Google Slides"
+      ],
+      "imageUrl": "/api/icons/google-slides.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "212f35bbb13694b45624a70c342df09e2eccad67eb362d3c5e3c7644ccb6e286"
+    },
+    {
+      "id": "grapher",
+      "app": "Grapher",
+      "aliases": [
+        "Grapher"
+      ],
+      "imageUrl": "/api/icons/grapher.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "b6ee7e52aa2a076d84cd4b2d9e771e1a42dd6e5c45330cce33d557f6073fb388"
+    },
+    {
+      "id": "gunsnglory",
+      "app": "GunsNGlory",
+      "aliases": [
+        "GunsNGlory"
+      ],
+      "imageUrl": "/api/icons/gunsnglory.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "f8b70c1424fd1db336423e062d78a8dc5982be5d9113f8e60234195c7232da2c"
+    },
+    {
+      "id": "hintview",
+      "app": "hintview",
+      "aliases": [
+        "hintview"
+      ],
+      "imageUrl": "/api/icons/hintview.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "e11916987b02719b6c5dfe741f4abddc28c6d3ff925b0327e3a838897f498305"
+    },
+    {
+      "id": "home",
+      "app": "Home",
+      "aliases": [
+        "Home"
+      ],
+      "imageUrl": "/api/icons/home.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "2073743e5893fcb35cdddb8de548d200d4dfab94080cc5649c8164ea0d3a1aff"
+    },
+    {
+      "id": "image-capture",
+      "app": "Image Capture",
+      "aliases": [
+        "Image Capture"
+      ],
+      "imageUrl": "/api/icons/image-capture.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "b0da21049c930d922a0547b9f78c0f91d443aaf09fa09269c2f91ed514439a60"
+    },
+    {
+      "id": "image-playground",
+      "app": "Image Playground",
+      "aliases": [
+        "Image Playground"
+      ],
+      "imageUrl": "/api/icons/image-playground.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "7b1b9d209ec72565bf6c9fcac85a146ff8a369b60f239a32e2207acde375e969"
+    },
+    {
+      "id": "journal",
+      "app": "Journal",
+      "aliases": [
+        "Journal"
+      ],
+      "imageUrl": "/api/icons/journal.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "737d436f6adf7f195882c323ee62617c1834c6fe759ce13d39114581cb9435f7"
+    },
+    {
+      "id": "latexit",
+      "app": "LaTeXiT",
+      "aliases": [
+        "LaTeXiT"
+      ],
+      "imageUrl": "/api/icons/latexit.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "4f9634edd26b67d8b893617c1a50084b3ee7ba6137cae261742fe65ceb5514f4"
+    },
+    {
+      "id": "magnifier",
+      "app": "Magnifier",
+      "aliases": [
+        "Magnifier"
+      ],
+      "imageUrl": "/api/icons/magnifier.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "06f4eaec655ceb4d9d6da960522b4e03d476b620a203401717c18ed60a393f4b"
+    },
+    {
+      "id": "maps",
+      "app": "Maps",
+      "aliases": [
+        "Maps"
+      ],
+      "imageUrl": "/api/icons/maps.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "d54d5691ae755f980d187b5513cded1289064d738b5c83678d7802f1e6d0c7c0"
+    },
+    {
+      "id": "vidhub",
+      "app": "VidHub",
+      "aliases": [
+        "VidHub",
+        "MediaCenter"
+      ],
+      "imageUrl": "/api/icons/vidhub.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "51a85f1ce9fc727832fb73d7c56ae11fb85af0f365c35cd4419384a1d05fa945"
+    },
+    {
+      "id": "migration-assistant",
+      "app": "Migration Assistant",
+      "aliases": [
+        "Migration Assistant"
+      ],
+      "imageUrl": "/api/icons/migration-assistant.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "8d131cbd2bb257c0217b1af6d1e1f08db3a8cde00f8f544ea3ced50e0610df20"
+    },
+    {
+      "id": "mission-control",
+      "app": "Mission Control",
+      "aliases": [
+        "Mission Control"
+      ],
+      "imageUrl": "/api/icons/mission-control.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "951adccbcb3438ba1f423c9f8c1d4314027421b97246b139951df11af276ff58"
+    },
+    {
+      "id": "osu",
+      "app": "osu!",
+      "aliases": [
+        "osu!"
+      ],
+      "imageUrl": "/api/icons/osu.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "f5f31e3d71096c849cdf6fb03ac3c5d2459c171e72ba0af0809b312f9a59cd65"
+    },
+    {
+      "id": "passwords",
+      "app": "Passwords",
+      "aliases": [
+        "Passwords"
+      ],
+      "imageUrl": "/api/icons/passwords.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "4b925fd94e7ad47d9c9a8e25f2c2a5d2d8798877f85dd927adba092153de4270"
+    },
+    {
+      "id": "phone",
+      "app": "Phone",
+      "aliases": [
+        "Phone"
+      ],
+      "imageUrl": "/api/icons/phone.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "14ee20e7e1b9c2109b148c13b94bf91c230e61c7ce462029a03489adcf0dc764"
+    },
+    {
+      "id": "photo-booth",
+      "app": "Photo Booth",
+      "aliases": [
+        "Photo Booth"
+      ],
+      "imageUrl": "/api/icons/photo-booth.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "1d7e600321c0baf020c3f12647689c0f891f215221d3b08e0c87098ae68e1e65"
+    },
+    {
+      "id": "podcasts",
+      "app": "Podcasts",
+      "aliases": [
+        "Podcasts"
+      ],
+      "imageUrl": "/api/icons/podcasts.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "818b95f8e838c57b589a982683bcd2aba20ded5d88a15ee7cd208433de497779"
+    },
+    {
+      "id": "print-center",
+      "app": "Print Center",
+      "aliases": [
+        "Print Center"
+      ],
+      "imageUrl": "/api/icons/print-center.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "0e841d487036c1f85c3a87d0134c0a21dac75b9e1d70daa9af87b03053c56c98"
+    },
+    {
+      "id": "rustdesk",
+      "app": "RustDesk",
+      "aliases": [
+        "RustDesk"
+      ],
+      "imageUrl": "/api/icons/rustdesk.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "7bd3cc311f88d65a59f3552196056525d9c76819985330219138ec082f8307ae"
+    },
+    {
+      "id": "screen-sharing",
+      "app": "Screen Sharing",
+      "aliases": [
+        "Screen Sharing"
+      ],
+      "imageUrl": "/api/icons/screen-sharing.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "efbb0a053460aa4ea041edcb0a7b63f022f813d78aadd71576459c571194d8e7"
+    },
+    {
+      "id": "screenshot",
+      "app": "Screenshot",
+      "aliases": [
+        "Screenshot"
+      ],
+      "imageUrl": "/api/icons/screenshot.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "ca0fea8cd01466c7dd45fc3cd325de4f3712ebe319bd3383a3311baff5508491"
+    },
+    {
+      "id": "script-editor",
+      "app": "Script Editor",
+      "aliases": [
+        "Script Editor"
+      ],
+      "imageUrl": "/api/icons/script-editor.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "778eae1d81175b4d766cb44f100bc98608d33c96bc345ebc2972394563830144"
+    },
+    {
+      "id": "shortcuts",
+      "app": "Shortcuts",
+      "aliases": [
+        "Shortcuts"
+      ],
+      "imageUrl": "/api/icons/shortcuts.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "9ce5791d49b4abb4bba53a43be95e6cf2fc7d582b0f5d27eacf877e94dcc0e15"
+    },
+    {
+      "id": "siri",
+      "app": "Siri",
+      "aliases": [
+        "Siri"
+      ],
+      "imageUrl": "/api/icons/siri.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "08abd3fbd7637c9f0646c0db2d020721b18394300a377322928061533bad00f4"
+    },
+    {
+      "id": "stickies",
+      "app": "Stickies",
+      "aliases": [
+        "Stickies"
+      ],
+      "imageUrl": "/api/icons/stickies.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "c8306c228d20630709862bcf16ae8dfa9b85e2bb0089fa0d47ff912315983983"
+    },
+    {
+      "id": "stocks",
+      "app": "Stocks",
+      "aliases": [
+        "Stocks"
+      ],
+      "imageUrl": "/api/icons/stocks.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "35e42b28bb6ed3fc65fe8c47f6c564c90cf4fb74851f0ec0857c6626738a3012"
+    },
+    {
+      "id": "system-settings",
+      "app": "System Settings",
+      "aliases": [
+        "System Settings"
+      ],
+      "imageUrl": "/api/icons/system-settings.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "dfc353cd445a0f826642c483c5269c66388d3c7ea1a51bb458fe96e88f410540"
+    },
+    {
+      "id": "tex-live-utility",
+      "app": "TeX Live Utility",
+      "aliases": [
+        "TeX Live Utility"
+      ],
+      "imageUrl": "/api/icons/tex-live-utility.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "5411423080fd7ed3fb096ef776b1eb7eb3d6a96bca744b38c8eb53f9cbc5f5dd"
+    },
+    {
+      "id": "texshop",
+      "app": "TeXShop",
+      "aliases": [
+        "TeXShop"
+      ],
+      "imageUrl": "/api/icons/texshop.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "71f95e859e0dc7a7bdf9430903640c185c65935225eaa80c71f53019d13c7b4f"
+    },
+    {
+      "id": "time-machine",
+      "app": "Time Machine",
+      "aliases": [
+        "Time Machine"
+      ],
+      "imageUrl": "/api/icons/time-machine.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "e48ea54364f4fded50298aead7766a2139ce62d27a5f6c56fa1f509522cfbafe"
+    },
+    {
+      "id": "tips",
+      "app": "Tips",
+      "aliases": [
+        "Tips"
+      ],
+      "imageUrl": "/api/icons/tips.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "5b7013fcffe5c98b3edc84025a05760b2ec55646272f85f40bff2da6597daa06"
+    },
+    {
+      "id": "todesk",
+      "app": "ToDesk",
+      "aliases": [
+        "ToDesk"
+      ],
+      "imageUrl": "/api/icons/todesk.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "d0318e368d0c348e18c8bd7f9336b1ccfd49503ce727629895f8269b97566188"
+    },
+    {
+      "id": "transmission",
+      "app": "Transmission",
+      "aliases": [
+        "Transmission"
+      ],
+      "imageUrl": "/api/icons/transmission.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "b0fd1169f85b6404ad66b66af1fe012b8b5bcc34ce2e758a6d5f1d34e0a719ee"
+    },
+    {
+      "id": "voice-memos",
+      "app": "Voice Memos",
+      "aliases": [
+        "Voice Memos",
+        "VoiceMemos"
+      ],
+      "imageUrl": "/api/icons/voice-memos.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "3cb1d0783c69b2db8839d22a13ffbc780c98a675e79459289e1339c1f741a3c5"
+    },
+    {
+      "id": "voiceover-utility",
+      "app": "VoiceOver Utility",
+      "aliases": [
+        "VoiceOver Utility"
+      ],
+      "imageUrl": "/api/icons/voiceover-utility.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "509144b514114c3416fd87024dbdbcd5509ed8e1a8506836537073af64141bc8"
+    },
+    {
+      "id": "vox",
+      "app": "Vox",
+      "aliases": [
+        "Vox",
+        "VOX"
+      ],
+      "imageUrl": "/api/icons/vox.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "851cbdd6a259ad2fe74cabb928f15d13335cfff5394ebdfb44e11b840d682f4a"
+    },
+    {
+      "id": "weather",
+      "app": "Weather",
+      "aliases": [
+        "Weather"
+      ],
+      "imageUrl": "/api/icons/weather.png",
+      "source": "installed-app",
+      "credit": "应用图标版权归原作者",
+      "sourceUrl": null,
+      "sha256": "9064c027dedf3a5ec3bb1925362df1566dde714adda95616b3eca3e7b0c8912d"
     }
   ]
 }

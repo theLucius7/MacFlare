@@ -1,6 +1,6 @@
 Application icons
 
-These PNGs were exported from the configured applications installed on the maintainer's Mac, using native macOS tools. They are application identification assets, not cached macOSicons API responses.
+These PNGs were exported from the configured applications installed on the maintainer's Mac, using native macOS tools. They are application identification assets, not cached macOSicons API responses. For installed apps packaged in an iOS wrapper, the exporter verifies the direct inner application identity and prefers its declared PNG icon resources, converted using native macOS tools. When those resources are unavailable, the outer installed app's NSWorkspace icon is used as a fallback.
 
 Application icons, names and trademarks belong to their respective software authors. These assets are **not covered by MacFlare's MIT code license**; retaining them here does not grant ownership or permission for unrelated reuse.
 

@@ -43,6 +43,7 @@ The native tests require Python 3 and Node.js in the development environment. Th
 | Mac Agent, installation, or scheduling | Run the native checks above, including both Python suites; add targeted manual and launchd results when needed |
 | Buffered protocol or playback | Run `npm test` and both native suites for cross-runtime changes; cover rapid transitions, gaps, restarts, bounds, and absolute expiry |
 | Music or system permissions | Verify manual and background reads separately; success in one execution mode does not establish success in the other |
+| App-icon export or catalog | Run `python3 -B scripts/tests/test_export_app_icons.py`, `npm test`, and `npm run check`; for exporter changes, verify selected installed apps on macOS and inspect the exported images |
 | Documentation or repository templates | `npm run check`; check examples against the current code. Documentation-only changes do not require unrelated application or native tests to be repeated |
 
 Record the commands run and their results, and identify environments you could not cover. Use synthetic data or disable sensitive collection during tests. Do not modify someone else's production deployment for validation. `--print` emits personal status even though it does not upload; do not attach its unredacted output. `--observe SECONDS` reports counts without Worker uploads, but enabled Music collection may still query Apple for artwork.
