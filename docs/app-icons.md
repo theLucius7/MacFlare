@@ -23,7 +23,7 @@ import AppIconGallery from './.vitepress/theme/AppIconGallery.vue'
 
 ## 配置固定映射
 
-编辑 [config/app-icons.json](https://github.com/xw7qwq/macflare/blob/main/config/app-icons.json)。当前配置与仓库清单包含 45 个已安装应用图标，最多配置 128 项；本页可浏览并复制图片地址，不代表这些应用当前正在运行。
+编辑 [config/app-icons.json](https://github.com/xw7qwq/macflare/blob/main/config/app-icons.json)。当前固定配置包含 108 个已安装应用映射，最多配置 128 项；实际发布的条目以上方图标目录或 `GET /api/icons` 返回的清单为准，不代表这些应用当前正在运行。
 
 ```json
 {
@@ -47,12 +47,20 @@ import AppIconGallery from './.vitepress/theme/AppIconGallery.vue'
 | `apps` | 有限的应用映射数组，1–128 项 |
 | `app` | 必填字符串，配置中的应用名称 |
 | `id` | 原生导出必填；唯一的小写字母、数字与单连字符标识，决定 PNG 文件名和 API 路径 |
-| `bundleId` | 原生导出必填；用于核对目标应用的 macOS bundle identifier |
+| `bundleId` | 原生导出必填；用于核对目标应用的真实 bundle identifier，包装应用使用内部应用身份 |
 | `query` | 必填字符串，可选 macOSicons 搜索使用的固定词 |
 | `aliases` | 必填非空字符串数组，用于识别应用名称及别名 |
 | `matchNames` | 必填非空字符串数组，可选 macOSicons 搜索可接受的结果名称 |
 
-仅添加需要公开展示的应用。不要从实时进程列表生成搜索词或遍历整个第三方图标目录；名称无法匹配时先核对本机预览，再调整配置。
+仅添加需要公开展示的应用。不要从实时进程列表生成搜索词或遍历整个第三方图标目录；名称无法匹配时先核对本机预览，再调整配置。显示名称、进程名称与应用包名称可能不同，应通过 `aliases` 关联，保持已有 `id` 和图片地址稳定。缺少可核验 bundle identifier 的条目先跳过，不根据名字伪造身份。
+
+| 显示名称与别名 | 稳定 `id` | 静态图片路径 |
+| --- | --- | --- |
+| Typora | `typora` | `/app-icons/typora.png` |
+| TV、Apple TV | `tv` | `/app-icons/tv.png` |
+| VidHub、MediaCenter | `vidhub` | `/app-icons/vidhub.png` |
+
+Typora 与 TV 沿用原有图标；Apple TV 的显示名通过别名匹配。VidHub 的公开显示名与其 `MediaCenter` 应用包名称不同，两者映射到同一图标。对应图片 API 将上述 `/app-icons/` 前缀换为 `/api/icons/`。
 
 ## 原生图标导出与发布
 
@@ -64,6 +72,8 @@ npm run icons:export
 ```
 
 [导出脚本](https://github.com/xw7qwq/macflare/blob/main/scripts/export-app-icons.py) 使用开发阶段的 Python 3 与系统 JXA、`sips` 工具，不使用 macOSicons Key，也不增加生产 Agent 的运行依赖。普通站点构建不会扫描已安装应用。导出也支持用户的 `~/Applications` 安装目录。`--dry-run` 只检查配置中的应用是否存在，不导出或修改文件；应用缺失时导出停止并保留现有输出，先调整配置或安装目标应用。
+
+导出器支持标准的 `Contents/Info.plist`、应用根目录的 `Info.plist`，以及使用 `Wrapper` 的已安装 iOS 应用。对于包装应用，仅核验 `Wrapper` 目录下直接 `.app` 子包的真实身份，不递归搜集辅助程序。优先读取该已核验子包明确声明的 PNG 图标资源，使用 macOS 原生 `sips` 转换；无法取得声明资源时，才通过 `NSWorkspace` 从外层已安装应用取图作为兜底。此兼容处理不调用网络服务，也不读取应用文档或使用记录。
 
 生成文件位于 `docs/public/app-icons/<id>.png` 和 `docs/public/app-icons/index.json`。检查图标、应用名称、别名与版权后，将需要公开的 PNG 和清单一同提交，再运行 `npm run deploy`。首次克隆可直接构建已有的仓库图标，无需重新导出或第三方 Key。应用图标更新后，重新导出并发布即可。
 

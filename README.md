@@ -14,7 +14,7 @@ The Agent uses native Bash, `osascript` (JXA), `curl`, `pmset`, and `launchd`. *
 ## What it includes
 
 - Apple Music state, title, artist, and optional matched Apple artwork; unavailable permissions degrade independently.
-- App names with 45 repository-hosted native icons, plus optional macOSicons supplementation. Window titles, document paths, and process arguments are not collected.
+- App names with a [repository-hosted native icon catalog](https://macflare.lucius7.dev/app-icons), plus optional macOSicons supplementation. Window titles, document paths, and process arguments are not collected.
 - Independent privacy switches, sensitive-app blocking, and a user LaunchAgent with install, update, and uninstall scripts.
 - Authenticated uploads, public JSON and SVG APIs, and a status page with documentation on the same Worker. No GitHub Pages deployment is needed.
 

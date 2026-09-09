@@ -46,3 +46,5 @@ jobs:
         run: |
           python3 agent/tests/native-smoke.py
           python3 agent/tests/window-native.py
+      - name: Test application icon bundle discovery
+        run: python3 -B scripts/tests/test_export_app_icons.py

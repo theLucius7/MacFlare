@@ -20,7 +20,7 @@ REPO = Path(__file__).resolve().parents[1]
 APP_ROOTS = (Path('/Applications'), Path.home() / 'Applications',
              Path('/System/Applications'), Path('/System/Applications/Utilities'))
 ID_PATTERN = re.compile(r'[a-z0-9]+(?:-[a-z0-9]+)*\Z')
-BUNDLE_PATTERN = re.compile(r'[A-Za-z0-9]+(?:[A-Za-z0-9.-]*[A-Za-z0-9])?\Z')
+BUNDLE_PATTERN = re.compile(r'[A-Za-z0-9]+(?:[A-Za-z0-9._-]*[A-Za-z0-9])?\Z')
 CONTROL_PATTERN = re.compile(r'[\x00-\x1f\x7f]')
 PNG_SIGNATURE = b'\x89PNG\r\n\x1a\n'
 WORKSPACE_EXPORT = r'''
@@ -65,14 +65,51 @@ def read_config(path):
     return selected
 
 
-def bundle_info(path, bundle_id):
+def bundle_identity(path, bundle_id):
     try:
         if path.suffix.lower() != '.app' or not path.is_dir():
             return None
-        info = plistlib.loads((path / 'Contents/Info.plist').read_bytes())
-        return info if isinstance(info, dict) and info.get('CFBundleIdentifier') == bundle_id else None
-    except (OSError, ValueError, plistlib.InvalidFileException):
+        outer = path.resolve(strict=True)
+
+        def identity(bundle):
+            for relative in ('Contents/Info.plist', 'Info.plist'):
+                try:
+                    metadata = (bundle / relative).resolve(strict=True)
+                    if outer not in metadata.parents or not metadata.is_file():
+                        continue
+                    info = plistlib.loads(metadata.read_bytes())
+                    if isinstance(info, dict) and info.get('CFBundleIdentifier') == bundle_id:
+                        return info
+                except (OSError, ValueError, RuntimeError, plistlib.InvalidFileException):
+                    continue
+            return None
+
+        info = identity(outer)
+        if info is not None:
+            return outer, info
+
+        # iOS-on-Mac stores its identity inside a direct Wrapper child. Never
+        # recurse into helpers/plugins or follow links that disguise them.
+        wrapper = outer / 'Wrapper'
+        if wrapper.is_symlink() or not wrapper.is_dir():
+            return None
+        with os.scandir(wrapper) as entries:
+            for index, entry in enumerate(entries):
+                if index >= 32:
+                    break
+                if Path(entry.name).suffix.lower() != '.app' or not entry.is_dir(follow_symlinks=False):
+                    continue
+                info = identity(Path(entry.path))
+                if info is not None:
+                    return Path(entry.path), info
         return None
+    except (OSError, ValueError, RuntimeError, plistlib.InvalidFileException):
+        return None
+
+
+def bundle_info(path, bundle_id):
+    found = bundle_identity(path, bundle_id)
+    return found[1] if found is not None else None
 
 
 def locate_app(item):
@@ -107,20 +144,65 @@ def locate_app(item):
     return None
 
 
+def primary_icon_resource(bundle, info):
+    found = bundle_identity(bundle, info.get('CFBundleIdentifier'))
+    if found is None:
+        return None
+    icon_bundle, identity = found
+    outer = bundle.resolve()
+    candidates = {}
+    for key in ('CFBundleIcons', 'CFBundleIcons~ipad'):
+        group = identity.get(key)
+        primary = group.get('CFBundlePrimaryIcon') if isinstance(group, dict) else None
+        files = primary.get('CFBundleIconFiles') if isinstance(primary, dict) else None
+        if not isinstance(files, list):
+            continue
+        for name in files[:32]:
+            if not text(name) or '/' in name or '\\' in name or name in ('.', '..'):
+                continue
+            stem = name[:-4] if name.lower().endswith('.png') else name
+            # Only declared primary names and standard iOS scale/device variants.
+            for suffix in ('', '@2x', '@3x', '~ipad', '@2x~ipad', '@3x~ipad', '~iphone', '@2x~iphone', '@3x~iphone'):
+                try:
+                    candidate = (icon_bundle / (stem + suffix + '.png')).resolve(strict=True)
+                    if outer not in candidate.parents or icon_bundle not in candidate.parents \
+                            or not candidate.is_file() or candidate.suffix.lower() != '.png':
+                        continue
+                    # Read dimensions only, including CgBI-optimized iOS PNGs.
+                    # Decoding and conversion remain entirely in native sips.
+                    with candidate.open('rb') as source:
+                        header = source.read(256)
+                    if not header.startswith(PNG_SIGNATURE):
+                        continue
+                    offset = 8
+                    while offset + 12 <= len(header):
+                        length = struct.unpack('>I', header[offset:offset + 4])[0]
+                        if offset + 12 + length > len(header):
+                            break
+                        if header[offset + 4:offset + 8] == b'IHDR' and length == 13:
+                            width, height = struct.unpack('>II', header[offset + 8:offset + 16])
+                            if width > 0 and height > 0:
+                                candidates[candidate] = width * height
+                            break
+                        offset += 12 + length
+                except (OSError, ValueError, RuntimeError):
+                    continue
+    return max(candidates, key=lambda path: (candidates[path], path.name)) if candidates else None
+
+
 def icon_resource(bundle, info):
     filename = info.get('CFBundleIconFile')
-    if not isinstance(filename, str) or not filename:
-        return None
-    resources = (bundle / 'Contents/Resources').resolve()
-    candidates = [resources / filename]
-    if not Path(filename).suffix:
-        candidates = [resources / (filename + extension) for extension in ('.icns', '.png', '.tiff')]
-    for candidate in candidates:
-        resolved = candidate.resolve()
-        if (resolved == resources or resources in resolved.parents) and resolved.is_file() \
-                and resolved.suffix.lower() in ('.icns', '.png', '.tiff', '.tif'):
-            return resolved
-    return None
+    if isinstance(filename, str) and filename:
+        resources = (bundle / 'Contents/Resources').resolve()
+        candidates = [resources / filename]
+        if not Path(filename).suffix:
+            candidates = [resources / (filename + extension) for extension in ('.icns', '.png', '.tiff')]
+        for candidate in candidates:
+            resolved = candidate.resolve()
+            if (resolved == resources or resources in resolved.parents) and resolved.is_file() \
+                    and resolved.suffix.lower() in ('.icns', '.png', '.tiff', '.tif'):
+                return resolved
+    return primary_icon_resource(bundle, info)
 
 
 def run_native(arguments):
@@ -137,14 +219,14 @@ def inspect_png(path, size):
     if not (0 < width <= size and 0 < height <= size):
         raise ValueError('Native conversion produced unexpected icon dimensions.')
     # Inspect only: Python never decodes, draws, resizes, or changes image pixels.
-    color_type = data[25]
-    offset, transparent = 8, color_type in (4, 6)
+    if data[25] not in (0, 2, 3, 4, 6):
+        raise ValueError('Native conversion produced an invalid PNG color type.')
+    offset = 8
     while offset + 12 <= len(data):
         length = struct.unpack('>I', data[offset:offset + 4])[0]
         kind = data[offset + 4:offset + 8]
         if offset + 12 + length > len(data):
             raise ValueError('Truncated PNG chunk.')
-        transparent = transparent or kind == b'tRNS'
         # Native sips emits resolution/colour-space EXIF and TIFF-property XMP.
         # Retain these standard fields while rejecting embedded local paths.
         if kind in (b'tEXt', b'zTXt', b'iTXt', b'eXIf'):
@@ -156,8 +238,6 @@ def inspect_png(path, size):
         offset += 12 + length
         if kind == b'IEND':
             break
-    if not transparent:
-        raise ValueError('Native conversion did not preserve an alpha channel.')
     return width, height, hashlib.sha256(data).hexdigest()
 
 
@@ -241,7 +321,7 @@ def main():
         for icon_id, png, width, height, method in exported:
             png.chmod(0o644)
             os.replace(png, output / (icon_id + '.png'))
-            print(f'{icon_id}: {width}x{height} PNG, alpha preserved ({method})')
+            print(f'{icon_id}: {width}x{height} native PNG ({method})')
         manifest.chmod(0o644)
         os.replace(manifest, output / 'index.json')
     print(f'Exported {len(exported)} native application icons and index.json. No missing applications.')
