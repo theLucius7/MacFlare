@@ -1,4 +1,4 @@
-"""Synthetic application bundles only; no installed-app reads or native tools."""
+"""Exporter regression tests; native checks use synthetic images, not installed apps."""
 from contextlib import nullcontext
 import importlib.util
 import json
