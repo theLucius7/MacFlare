@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Read the troubleshooting documentation first. Do not paste tokens, complete private configuration, or real personal snapshots.
+        Read the [troubleshooting documentation](https://github.com/xw7qwq/macflare/blob/main/docs/troubleshooting.md) first. Do not paste tokens, complete private configuration, raw timeline batches, or real personal snapshots.
         For security vulnerabilities, use [private vulnerability reporting](https://github.com/xw7qwq/macflare/security/advisories/new) instead of this public bug report.
   - type: input
     id: version
@@ -35,6 +35,14 @@ body:
     validations:
       required: true
   - type: textarea
+    id: profile
+    attributes:
+      label: Profile and affected stage
+      description: State buffered, eco, realtime, or unknown. For stale status, identify local collection, upload, API response, or page playback. Buffered playback normally runs seven minutes behind observations.
+      placeholder: buffered; page playback remains offline after the warm-up period
+    validations:
+      required: false
+  - type: textarea
     id: reproduction
     attributes:
       label: Reproduction steps
@@ -56,4 +64,4 @@ body:
     id: evidence
     attributes:
       label: Redacted diagnostics and troubleshooting attempted (optional)
-      description: Include only relevant excerpts. Remove Authorization, tokens, personal domains, and other unnecessary personal information.
+      description: Include only relevant excerpts or counts-only observe output. Remove Authorization, tokens, personal domains, app names, song details, and other unnecessary personal information. Do not attach raw --print output or window-cache.json.

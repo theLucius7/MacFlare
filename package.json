@@ -11,12 +11,13 @@
     "dev": "npm run docs:build && wrangler dev",
     "deploy": "npm run docs:build && wrangler deploy",
     "test": "node --test",
-    "check": "npm run docs:build && node scripts/check-site.mjs && node --check worker/index.js && wrangler deploy --dry-run",
+    "check": "npm run check:repo && npm run docs:build && node scripts/check-site.mjs && node --check worker/index.js && wrangler deploy --dry-run",
     "docs:dev": "vitepress dev docs --host 127.0.0.1",
     "docs:build": "node scripts/prepare-app-icons.mjs && vitepress build docs",
     "icons:sync": "node scripts/sync-app-icons.mjs",
     "icons:export": "python3 scripts/export-app-icons.py",
-    "docs:preview": "vitepress preview docs --host 127.0.0.1"
+    "docs:preview": "vitepress preview docs --host 127.0.0.1",
+    "check:repo": "node scripts/check-repository.mjs"
   },
   "devDependencies": {
     "vitepress": "1.6.4",
@@ -26,5 +27,14 @@
     "vitepress": {
       "vite": "6.4.3"
     }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xw7qwq/macflare.git"
+  },
+  "homepage": "https://macflare.lucius7.dev/",
+  "bugs": {
+    "url": "https://github.com/xw7qwq/macflare/issues"
   }
 }

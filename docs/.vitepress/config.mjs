@@ -14,6 +14,7 @@ export default defineConfig({
   themeConfig: {
     siteTitle: 'MacFlare',
     nav: [
+      { text: '文档导航', link: '/guide' },
       { text: '快速开始', link: '/getting-started' },
       { text: 'API', link: '/api' },
       { text: '免费额度', link: '/quotas' },
@@ -22,14 +23,15 @@ export default defineConfig({
     sidebar: [
       { text: '开始使用', items: [
         { text: '当前状态与概览', link: '/' },
+        { text: '文档导航', link: '/guide' },
         { text: '快速开始', link: '/getting-started' },
-        { text: '部署与自定义域名', link: '/deployment' },
         { text: '本机配置与调度', link: '/configuration' },
+        { text: '部署与维护', link: '/deployment' },
       ] },
       { text: '接入与运行', items: [
+        { text: '博客与 README 接入', link: '/integrations' },
         { text: 'HTTP API v1 / v2', link: '/api' },
         { text: '滑动窗口与延时播放', link: '/buffering' },
-        { text: '博客与 README 接入', link: '/integrations' },
         { text: '应用图标配置', link: '/app-icons' },
         { text: '免费额度与更新策略', link: '/quotas' },
         { text: '故障排查', link: '/troubleshooting' },

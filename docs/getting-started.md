@@ -2,6 +2,8 @@
 
 完成这份指南后，你会得到自己的状态主页、文档和公开 API，以及登录后自动推送的 Mac Agent。默认采用 **buffered：5 分钟上传、15 分钟窗口、正常延时 7 分钟播放**。
 
+这份指南用于从零部署。已有实例的升级和域名变更见 [部署与维护](deployment.md)；只需要读取接口时，从 [接入示例](integrations.md) 开始。
+
 ## 准备
 
 - 一台已登录图形桌面的 Mac。
@@ -18,7 +20,7 @@ npx wrangler login
 npx wrangler kv namespace create STATUS_KV
 ```
 
-将命令返回的命名空间 ID 填入 `wrangler.jsonc`，绑定名保留 `STATUS_KV`。默认 `vars.STATUS_TTL_SECONDS` 为 `"180"`，仅用于兼容 eco 快照；buffered 窗口独立按末尾加 600 秒过期。已有 API Token 时可使用 [非 OAuth 部署方式](deployment.md#使用已有-api-token)。
+将命令返回的命名空间 ID 填入 `wrangler.jsonc`，绑定名保留 `STATUS_KV`。`STATUS_TTL_SECONDS` 仅用于兼容快照，首次使用 buffered 可保留仓库默认值；窗口的独立截止规则见 [默认参数](buffering.md#默认参数)。已有 API Token 时可使用 [非 OAuth 部署方式](deployment.md#使用已有-api-token)。
 
 ## 2. 设置接收令牌并部署
 
@@ -39,7 +41,7 @@ npm run deploy
 /bin/bash scripts/install.sh --endpoint https://<worker>.<subdomain>.workers.dev --profile buffered
 ```
 
-第一条命令只打印真实本机状态。确认这些内容适合公开后再安装，并交互输入相同接收令牌。需要先调整隐私时，在安装命令加 `--no-start`，编辑安装后的 `config.json` 并预览，再运行安装命令启动。
+第一条命令打印真实本机状态，不向 Worker 上传；启用 Music 时仍可能向 Apple 查询封面。确认这些内容适合公开后再安装，并交互输入相同接收令牌。需要先调整隐私时，在安装命令加 `--no-start`，编辑安装后的 `config.json` 并预览，再运行安装命令启动。
 
 Music 自动化授权可能显示为 **bash 想要控制 Music**。请在系统弹窗或「系统设置 → 隐私与安全性 → 自动化」处理授权；前台终端和后台脚本可能分别需要授权。未允许时，其他指标仍可更新。
 

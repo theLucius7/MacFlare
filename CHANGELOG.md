@@ -1,39 +1,33 @@
 # Changelog
 
-本文件从当前实现建立基线。`Unreleased` 表示尚未归入正式发布记录，不代表已经发布版本；发布时由维护者补充真实版本、日期和迁移说明。
+This file records implemented changes that have not yet been assigned to a formal release. `Unreleased` is not a published version; maintainers will add confirmed versions and dates when releasing.
 
 ## Unreleased
 
-### Changed
-
-- buffered 将普通私有检查点合并为每 10 秒最多一次，无变化时每 30 秒保存覆盖心跳；应用与 Music 已观测语义变化仍立即进入有序内存窗口。启动、睡眠、隐私变化和上传边界立即保存；意外崩溃可能损失最近约 10 秒尚未保存的普通变化。
-- 硬件维持 30 秒采样：电量按整数百分比或供电状态变化记录，负载按绝对 0.20／相对 5% 的较大阈值记录，较小真变化在距上次记录达到 120 秒后，由下一次成功采样记录最新值；null 转换立即记录。
-- 首页应用、歌曲与运行列表普通切换通常最多每 2 秒一次，短时间连续变化仅显示最后候选；隐私遮蔽、清空、缺口、离线、新会话与同曲目封面补充及时处理。时间线与分类 API 保留原始回放语义，300／900／420／60 秒的上传、窗口、延时与拉取策略不变。
-
 ### Added
 
-- buffered 原生常驻采集模式：通知优先、Music 2 秒兜底、硬件 30 秒，只记录状态变化；每 5 分钟发送最近 15 分钟的有界窗口，一包一次 KV 写入，定时写入比 eco 减少 60%。
-- 新增鉴权 `POST /api/batch` 与公开 `GET /api/timeline`，包含基线、事件序号、会话和缺口；窗口按末尾加 10 分钟绝对过期。原有分类接口返回服务器时间减 7 分钟的切片。
-- 首页每分钟拉取窗口并在内存顺序播放；支持暖机、断网缓冲、防旧窗口倒退、不可恢复缺口提示。隐私配置变更清空本机队列并开启新会话。新安装默认 buffered，旧安装须显式迁移，先更新 Worker 再更新 Agent。
+- Native Bash/JXA collection for Apple Music, foreground and running GUI apps, battery, and system load, with independent privacy controls, sensitive-app filtering, and user LaunchAgent installation and removal.
+- buffered collection and v2 sliding windows: a baseline, ordered changes, sessions, and explicit observation gaps, uploaded every 300 seconds in one KV write. Windows span up to 900 seconds, with limits of 512 KiB, 2,048 events, and 128 gaps. Privacy changes clear the pending queue and start a new session.
+- Authenticated `POST /api/batch` and public `GET /api/timeline`. Windows expire at their end plus 600 seconds; the existing status and badge APIs project server time minus 420 seconds and return offline without valid coverage.
+- Public music, foreground-app, running-app, and device endpoints alongside `/api/now`, `/api/badge.svg`, and `/api/health`. Legacy root routes remain available without redirects; v1 snapshots retain server-controlled TTLs and their original expiration deadlines.
+- Native Apple artwork lookup and bounded caching on the Mac, with paired optional artwork/track URLs included in ordinary uploads. The Worker does not query Apple; the page retains a browser fallback for missing matches.
+- A catalog of 45 native PNG app icons with localized aliases, static links, and `/api/icons` image routes supporting HEAD, conditional requests, and one-hour caching without KV access. The exporter supports 128 mappings and user application directories; optional macOSicons synchronization skips native entries and keeps provider caches out of Git.
+- A same-domain VitePress status page, documentation, OpenAPI contract, and searchable icon catalog, plus Worker/native checks, CI, contribution and security guidance, issue/PR templates, and dependency updates.
+- Task-based documentation navigation and `check:repo` for required files, package/lockfile consistency, tracked local-state paths, and Markdown file links. Site validation also checks local HTML anchors; `.nvmrc` shares the Node.js 22 CI baseline, with package metadata and text/binary Git attributes.
 
-- 新增 `/api/music`、`/api/apps/active`、`/api/apps/running` 与 `/api/device` 分类接口，保留 `/api/now` 协议；Mac 原生查询并缓存当前曲目的可信 Apple 封面，随同一次状态推送；音乐接口直接返回曲名、歌手与封面地址，不再从边缘节点请求 Apple，不增加 KV 写入次数。
-- 原生应用图标扩充至 45 个，补充本地化名称与进程别名，文档提供可搜索图标目录及静态/API 图片地址；导出器支持 128 项和用户应用目录，第三方同步自动跳过已被原生图标覆盖的应用。
+### Changed
 
-- 从已安装应用导出有限原生 PNG 集并随仓库发布，首页优先使用静态图标；新增 `/api/icons` 清单与 `/api/icons/<id>.png` 图片接口，支持 GET/HEAD/OPTIONS、1 小时缓存及条件请求，不访问 KV 或第三方搜索。图标版权不包含在代码 MIT 授权中。
-- 可选 macOSicons 应用图标：部署前同步有限固定映射，Key 与生成缓存不入 Git，保留来源和作者；记录最多有效 30 天，缺失或过期时使用占位，不新增 KV 操作。
-- 首页歌曲封面：优先使用 Mac 已上报的封面地址；缺少有效上报地址时，浏览器直连 Apple iTunes Search API 查询美国商店的可信匹配，提供有界内存缓存和占位降级，不增加 Worker 请求。
-- 同域状态主页与静态文档，规范 `/api/*` 接口，旧入口保持无重定向兼容。
-- eco（120 秒上报 / 180 秒过期）与 realtime（30 / 60）模式；旧本机配置保留原行为。
-- 可配置服务端 TTL，保存原始截止时间，兼容旧记录并覆盖模式迁移测试。
-
-- macOS 原生 Bash/JXA 状态采集、用户级 LaunchAgent 安装与卸载，以及可配置的采集隐私开关。
-- Cloudflare Worker 鉴权上报、公开状态查询、SVG 徽章和健康检查；KV 当前快照与服务端过期检查。
-- Worker、HTTP 边界和 macOS 原生测试，以及部署、API、配置和隐私文档。
-- 贡献与安全报告流程、行为规范、Issue/PR 模板和 Dependabot 更新配置。
+- New installations default to buffered, with about 288 scheduled KV writes per day. Existing profiles are preserved: eco remains 120-second uploads with a 180-second TTL, and realtime remains 30-second uploads with a 60-second TTL. Migrate explicitly with `--profile buffered` after deploying the compatible Worker.
+- Ordinary private checkpoints combine writes at roughly 10-second intervals; quiet coverage is saved about every 30 seconds. Observed app and Music changes enter memory immediately, and safety boundaries save immediately. A crash can lose roughly the latest 10 seconds of unsaved ordinary events; checkpoint files can lag the current window.
+- Hardware remains sampled every 30 seconds. Battery events follow integer percentage or power-state changes. System load is recorded at the larger of a 0.20 absolute or 5% relative change; smaller real changes are recorded by the next successful sample after 120 seconds since the last recorded system value. Transitions to or from `null` are recorded immediately.
+- The home page fetches a window every 60 seconds, handles warmup and gaps, retains valid coverage during transient failures, and rejects older windows. Ordinary app, music, and running-list display changes are coalesced over 2 seconds without changing the original API timeline. Privacy masking, clearing, unavailable states, removed apps, and new sessions clear old displays immediately; same-track artwork can update immediately.
+- README and repository navigation provide a shorter English entry point, with detailed operational behavior in the documentation site. This changelog consolidates implemented behavior in English without introducing release claims.
 
 ### Fixed
 
-- 仓库迁移后，CI 徽章、克隆示例、文档编辑和安全报告入口统一指向 `xw7qwq/macflare`。
-- Music 当前曲目或单个元数据字段不可读时，保留已知的播放/暂停状态，缺失字段独立返回 `null`。
+- Preserve known playing/paused Music state when the current track or an individual metadata field cannot be read; unavailable metadata independently becomes `null`.
+- Reject `--once` and default single-push commands in buffered configurations so an accidental v1 upload does not replace the public timeline.
+- Align repository links, CI badges, clone examples, editing links, and security entry points with `xw7qwq/macflare`.
+- Repair six documentation anchor references containing Chinese punctuation, preserve the installed profile in domain-change examples, and document separate timeline-retention and playback cutoffs. Security guidance covers both ingestion routes and the separate local token file.
 
-计划功能见 [路线图](docs/roadmap.md)，已发生的代码变更见 [提交记录](https://github.com/xw7qwq/macflare/commits/main/)。
+See the [roadmap](docs/roadmap.md) for planned work and the [commit history](https://github.com/xw7qwq/macflare/commits/main/) for individual changes.

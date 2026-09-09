@@ -30,6 +30,8 @@ import NowStatus from './.vitepress/theme/NowStatus.vue'
 
 MacFlare 本机只使用系统自带工具。部署一次后，由 macOS 原生 `launchd` 定时推送；无需第三方后台管理器或播放器。
 
+[文档导航](guide.md) 按「部署自己的状态页」「接入现有 API」「维护和贡献」提供完整阅读路径。
+
 | 从哪里开始 | 文档 |
 | --- | --- |
 | 部署自己的状态页和 API | [快速开始](getting-started.md) |

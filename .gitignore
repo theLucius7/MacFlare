@@ -16,6 +16,8 @@ docs/.vitepress/theme/app-icons.json
 docs/.vitepress/theme/app-icons.json.tmp
 work/
 *.token
+token
+last-result.json
 artwork-cache.json
 artwork-cache.json.tmp
 window-cache.json
