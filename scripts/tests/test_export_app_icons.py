@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 import plistlib
 import struct
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -18,7 +20,7 @@ SPEC.loader.exec_module(EXPORTER)
 BUNDLE_ID = 'dev.example.Player'
 
 
-def png_fixture(width=1, height=1, color_type=2, cgbi=False):
+def png_fixture(width=1, height=1, color_type=2, cgbi=False, alpha=0, single_pixel=False):
     """Small parser fixtures; no application image pixels are read or edited."""
     def chunk(kind, payload):
         return struct.pack('>I', len(payload)) + kind + payload + struct.pack('>I', zlib.crc32(kind + payload))
@@ -26,8 +28,11 @@ def png_fixture(width=1, height=1, color_type=2, cgbi=False):
     if cgbi:
         data += chunk(b'CgBI', b'\0\0\0\0')
     data += chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, color_type, 0, 0, 0))
-    channels = 4 if color_type == 6 else 3
-    data += chunk(b'IDAT', zlib.compress((b'\0' + b'\0' * width * channels) * height))
+    pixel = b'\0\0\0' + (bytes([alpha]) if color_type == 6 else b'')
+    rows = (b'\0' + pixel * width) * height
+    if single_pixel:
+        rows = rows[:4] + b'\xff' + rows[5:]
+    data += chunk(b'IDAT', zlib.compress(rows))
     return data + chunk(b'IEND', b'')
 
 
@@ -220,15 +225,67 @@ class BundleIdentityTests(unittest.TestCase):
 
         def native(arguments):
             calls.append(arguments)
-            self.assertEqual(arguments[0], '/usr/bin/sips')
-            self.assertIn(str(source.resolve()), arguments)
-            Path(arguments[-1]).write_bytes(png_fixture(color_type=2))
+            if arguments[0] == '/usr/bin/sips':
+                self.assertIn(str(source.resolve()), arguments)
+                Path(arguments[-1]).write_bytes(png_fixture(color_type=2))
+            else:
+                self.assertTrue(arguments[-2].endswith('native-visibility.js'))
 
         with patch.object(EXPORTER, 'run_native', side_effect=native):
             result = EXPORTER.export_icon(self.bundle, info, {'id': 'example'}, stage, 256, stage / 'unused.js')
-        self.assertEqual(len(calls), 1)
+        self.assertEqual(len(calls), 2)
         self.assertEqual(result[1][:2], (1, 1))
         self.assertEqual(result[2], 'bundle resource')
+
+    def test_empty_resource_falls_back_but_empty_workspace_output_fails(self):
+        info, inner = self.primary_metadata(['AppIcon'])
+        (inner / 'AppIcon.png').write_bytes(png_fixture())
+        stage = self.root / 'stage'
+        stage.mkdir()
+        for fallback_empty in (False, True):
+            with self.subTest(fallback_empty=fallback_empty):
+                checks = []
+
+                def native(arguments):
+                    if arguments[0] == '/usr/bin/sips':
+                        Path(arguments[-1]).write_bytes(png_fixture())
+                    elif arguments[-2].endswith('native-visibility.js'):
+                        checks.append(arguments[-1])
+                        if len(checks) == 1 or fallback_empty:
+                            raise subprocess.CalledProcessError(1, arguments[0])
+
+                with patch.object(EXPORTER, 'run_native', side_effect=native):
+                    if fallback_empty:
+                        with self.assertRaises(subprocess.CalledProcessError):
+                            EXPORTER.export_icon(self.bundle, info, {'id': 'example'}, stage, 256, stage / 'workspace.js')
+                    else:
+                        result = EXPORTER.export_icon(self.bundle, info, {'id': 'example'}, stage, 256, stage / 'workspace.js')
+                        self.assertEqual(result[2], 'NSWorkspace icon')
+                self.assertEqual(len(checks), 2)
+
+    @unittest.skipUnless(sys.platform == 'darwin', 'Native Core Image visibility check requires macOS')
+    def test_native_visibility_accepts_sparse_faint_and_opaque_images(self):
+        script = self.root / 'visibility.js'
+        script.write_text(EXPORTER.VISIBILITY_CHECK, encoding='utf-8')
+        fixtures = (
+            ('transparent', png_fixture(32, 32, color_type=6), False),
+            ('opaque RGB', png_fixture(32, 32), True),
+            ('opaque alpha', png_fixture(32, 32, color_type=6, alpha=255), True),
+            ('faint alpha', png_fixture(32, 32, color_type=6, alpha=1), True),
+            ('one visible pixel', png_fixture(256, 256, color_type=6, single_pixel=True), True),
+            ('invalid image', b'not an image', False),
+        )
+        for label, contents, visible in fixtures:
+            with self.subTest(label=label):
+                image = self.root / 'fixture.png'
+                image.write_bytes(contents)
+                command = ['/usr/bin/osascript', '-l', 'JavaScript', str(script), str(image)]
+                if visible:
+                    EXPORTER.run_native(command)
+                else:
+                    with self.assertRaises(subprocess.CalledProcessError):
+                        EXPORTER.run_native(command)
+                self.assertEqual(image.read_bytes(), contents)
 
 
 if __name__ == '__main__':

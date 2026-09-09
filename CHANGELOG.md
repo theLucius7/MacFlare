@@ -28,6 +28,7 @@ This file records implemented changes that have not yet been assigned to a forma
 
 ### Fixed
 
+- Reject fully transparent icon resources and render the native Workspace image representation before fallback conversion, so applications such as Books retain their visible icon.
 - Preserve known playing/paused Music state when the current track or an individual metadata field cannot be read; unavailable metadata independently becomes `null`.
 - Reject `--once` and default single-push commands in buffered configurations so an accidental v1 upload does not replace the public timeline.
 - Align repository links, CI badges, clone examples, editing links, and security entry points with `xw7qwq/macflare`.

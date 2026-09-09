@@ -28,10 +28,30 @@ ObjC.import('AppKit');
 ObjC.import('Foundation');
 function run(args) {
   var icon = $.NSWorkspace.sharedWorkspace.iconForFile(args[0]);
-  var data = icon.TIFFRepresentation;
+  icon.size = $.NSMakeSize(256, 256);
+  // Ask AppKit to render its best representation; TIFFRepresentation on the
+  // original NSImage can contain only a transparent modern icon layer.
+  var image = icon.CGImageForProposedRectContextHints(undefined, undefined, $.NSDictionary.dictionary);
+  var bitmap = $.NSBitmapImageRep.alloc.initWithCGImage(image);
+  var data = bitmap.representationUsingTypeProperties($.NSBitmapImageFileTypePNG, $.NSDictionary.dictionary);
   if (!data || data.isNil() || !data.writeToFileAtomically(args[1], true)) {
     throw new Error('Cannot export the native application icon.');
   }
+}
+'''
+VISIBILITY_CHECK = r'''
+ObjC.import('AppKit');
+ObjC.import('CoreImage');
+ObjC.import('Foundation');
+function run(args) {
+  var image = $.CIImage.imageWithContentsOfURL($.NSURL.fileURLWithPath(args[0]));
+  if (!image || image.isNil()) throw new Error('Cannot inspect the native icon.');
+  var filter = $.CIFilter.filterWithName('CIAreaMaximum');
+  filter.setValueForKey(image, 'inputImage');
+  filter.setValueForKey($.CIVector.vectorWithCGRect(image.extent), 'inputExtent');
+  var bitmap = $.NSBitmapImageRep.alloc.initWithCIImage(filter.valueForKey('outputImage'));
+  var alpha = Number(bitmap.colorAtXY(0, 0).alphaComponent);
+  if (!isFinite(alpha) || alpha <= 0) throw new Error('Native icon is fully transparent.');
 }
 '''
 
@@ -243,18 +263,27 @@ def inspect_png(path, size):
 
 def export_icon(bundle, info, item, staging, size, workspace_script):
     target = staging / (item['id'] + '.png')
+    visibility_script = staging / 'native-visibility.js'
+    if not visibility_script.exists():
+        visibility_script.write_text(VISIBILITY_CHECK, encoding='utf-8')
+
+    def checked_output():
+        details = inspect_png(target, size)
+        run_native(['/usr/bin/osascript', '-l', 'JavaScript', str(visibility_script), str(target)])
+        return details
+
     resource = icon_resource(bundle, info)
     if resource is not None:
         try:
             run_native(['/usr/bin/sips', '-s', 'format', 'png', '-Z', str(size), str(resource), '--out', str(target)])
-            return target, inspect_png(target, size), 'bundle resource'
+            return target, checked_output(), 'bundle resource'
         except (OSError, ValueError, subprocess.SubprocessError):
-            # Asset-catalog-only or unconvertible resources use the system's own icon.
+            # Missing, unconvertible, or invisible resources use AppKit's icon.
             pass
-    native_tiff = staging / (item['id'] + '.tiff')
-    run_native(['/usr/bin/osascript', '-l', 'JavaScript', str(workspace_script), str(bundle), str(native_tiff)])
-    run_native(['/usr/bin/sips', '-s', 'format', 'png', '-Z', str(size), str(native_tiff), '--out', str(target)])
-    return target, inspect_png(target, size), 'NSWorkspace icon'
+    native_png = staging / (item['id'] + '.native.png')
+    run_native(['/usr/bin/osascript', '-l', 'JavaScript', str(workspace_script), str(bundle), str(native_png)])
+    run_native(['/usr/bin/sips', '-s', 'format', 'png', '-Z', str(size), str(native_png), '--out', str(target)])
+    return target, checked_output(), 'NSWorkspace icon'
 
 
 def check_output_paths(output, selected):
