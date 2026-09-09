@@ -1,31 +1,21 @@
-# 部署与验收
+# 部署与维护
 
 每个 Worker/KV 部署代表一台 Mac。除明确注明的维护者实例外，以下示例中的域名和 ID 都是占位符，需替换为自己账户中的真实值。项目不会自动购买或升级 Cloudflare 套餐。
 
-## 前提
+首次创建 KV、设置接收令牌和安装 Agent，请按 [快速开始](getting-started.md) 操作。本页用于维护已有部署：认证、自定义域名、兼容升级、验收与回滚。以下命令在已执行 `npm ci` 的仓库根目录运行；本机选项见 [配置](configuration.md)，采集与回放参数见 [缓冲设计](buffering.md)。
 
-- 本机采集需要 macOS 图形用户会话；运行时使用系统自带工具，不需要安装语言环境。
-- 部署和开发需要 Node.js 22+、npm 以及锁文件中指定的 Wrangler。
-- Cloudflare 账户具有部署 Workers 和创建 Workers KV 命名空间的权限。
-- GitHub 账户只用于克隆或贡献项目，Mac 状态上报不需要 GitHub 凭据。
+## Cloudflare 认证
 
-新安装默认 buffered：每 300 秒上传最近 900 秒窗口，正常延时 420 秒播放，全天定时约 288 次 KV 写入；免费配额为每日 1,000 次，手动操作、重试与同账户其他项目另计。旧安装保留已有模式，旧无 profile 的配置保留 realtime；升级时显式指定 buffered。参见 [免费额度与模式](quotas.md)。
+### 浏览器登录
 
-## 部署 Worker
-
-### 获取代码与登录
-
-以下使用浏览器 OAuth。已有可用 Cloudflare API Token 时，完成克隆和 `npm ci` 后，可跳过 `login`、`whoami`，改用下一节的环境变量方式，无需再次授予 OAuth。
+使用浏览器 OAuth 时运行：
 
 ```sh
-git clone https://github.com/xw7qwq/macflare.git
-cd macflare
-npm ci
 npx wrangler login
 npx wrangler whoami
 ```
 
-在浏览器完成 Cloudflare OAuth。若有多个账户，确认选中的账户正确；自有配置可显式设置 `account_id`，但不要提交账户的私密凭据。Wrangler 登录命令见 [官方命令参考](https://developers.cloudflare.com/workers/wrangler/commands/general/)。
+若有多个账户，确认选中的账户正确。已有可用 API Token 时，使用下一节的环境变量方式，无需再运行 `login`。[Wrangler 命令参考](https://developers.cloudflare.com/workers/wrangler/commands/general/)
 
 ### 使用已有 API Token
 
@@ -43,31 +33,11 @@ read -r -p "Cloudflare account ID: " CLOUDFLARE_ACCOUNT_ID
 export CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID
 ```
 
-保持在同一终端继续下方的 KV、Secret 和部署步骤；Wrangler 自动读取环境变量，不需要 `wrangler login`。完成部署后运行 `unset CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID` 清除当前 shell 的变量。CI 环境应由平台 Secret 注入同名变量，本仓库 CI 检查代码、原生脚本和文档构建，不自动部署 Cloudflare。
+保持在同一终端继续 [快速开始](getting-started.md) 的 KV、Secret 和部署步骤，或更新已有部署；Wrangler 自动读取环境变量，不需要 `wrangler login`。完成部署后运行 `unset CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID` 清除当前 shell 的变量。CI 环境应由平台 Secret 注入同名变量，本仓库 CI 检查代码、原生脚本和文档构建，不自动部署 Cloudflare。
 
 **Cloudflare API Token 只用于管理云端资源；`INGEST_TOKEN` 只用于 Mac 向 `/api/batch` 或 `/api/update` 上报。** 两者必须分别生成和保存，不要把账户凭据放入本机 Agent 的 `token` 文件、Worker 的 `INGEST_TOKEN`、`.dev.vars` 或前端。账户 ID 是资源标识，不是密码，但仍应确认它对应本次部署账户。
 
-### 创建并绑定 KV
-
-```sh
-npx wrangler kv namespace create STATUS_KV
-```
-
-编辑 `wrangler.jsonc`，将返回的真实 ID 填入 `kv_namespaces` 中对应条目。`binding` 必须为 `STATUS_KV`；Worker 名称可按自己的需要修改。命名空间 ID 是资源标识，不是鉴权令牌；各部署应使用独立命名空间，避免相互覆盖固定键 `now`。[Wrangler KV 命令参考](https://developers.cloudflare.com/workers/wrangler/commands/kv/)
-
-### 设置 Secret 并发布
-
-```sh
-openssl rand -hex 32
-npx wrangler secret put INGEST_TOKEN
-npm run deploy
-```
-
-第一个命令生成 32 字节随机值，十六进制表示为 64 字符。将其保存到密码管理器，再粘贴到 `secret put` 的交互提示；安装 Mac Agent 时使用同一值。不要把实际令牌写入命令参数、`wrangler.jsonc` 或 Git。`INGEST_TOKEN` 与 Cloudflare 账户 API Token 是两种不同凭据。
-
-`secret put` 本身会创建并部署 Worker 版本；首次出现“创建新 Worker”的提示时，确认名称属于本次部署。最后的 `npm run deploy` 发布仓库中的完整代码和绑定。相关行为见 [Wrangler Workers 命令参考](https://developers.cloudflare.com/workers/wrangler/commands/workers/)。
-
-部署输出的 `https://<worker>.<subdomain>.workers.dev` 是本机配置所需的基础地址。无需在 Mac 上开放入站端口，也不需要 Cloudflare Tunnel。
+部署配置中的 KV 绑定名保留 `STATUS_KV`，每台 Mac 使用独立命名空间，避免覆盖同一个 `now` 键。更新已部署代码时复用原有绑定和 `INGEST_TOKEN`；重新生成接收令牌还需要同步更新本机令牌文件。首次资源创建步骤集中在 [快速开始](getting-started.md#_1-获取项目)。
 
 ## 自定义域名
 
@@ -81,13 +51,15 @@ Worker 的 Custom Domain 同时服务主页、文档和 `/api/*`，无需另外�
 
 域名必须属于当前 Cloudflare 账户的活动 zone，目标子域名不能已有冲突的 CNAME。运行 `npm run deploy` 后由 Cloudflare 管理 DNS 和证书。保留 `workers_dev: true` 可继续使用原 workers.dev 地址。[官方 Custom Domains 指南](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/)
 
+自建实例还应将 `docs/.vitepress/config.mjs` 中的 `sitemap.hostname` 改为自己的 HTTPS 根地址，保留 `base: '/'`，再一同构建部署，避免站点地图仍指向维护者实例。
+
 确认 `https://macflare.example.com/api/health` 正常，再更新本机：
 
 ```sh
-/bin/bash scripts/install.sh --endpoint https://macflare.example.com --profile buffered
+/bin/bash scripts/install.sh --endpoint https://macflare.example.com
 ```
 
-维护者实例为 `https://macflare.lucius7.dev`。普通使用者应部署自己的实例，不向维护者实例上传。
+此命令保留已有 profile、令牌和隐私设置，只更新地址及已安装代码。维护者实例为 `https://macflare.lucius7.dev`。普通使用者应部署自己的实例，不向维护者实例上传。
 
 ### 静态页面与 API 路由
 
@@ -95,94 +67,63 @@ Worker 的 Custom Domain 同时服务主页、文档和 `/api/*`，无需另外�
 
 不要删除 `assets.run_worker_first` 中的 API 规则，否则文档导航请求可能误吞 API。部署后验证 `/` 是 HTML、`/api/now` 是 JSON、`/api/badge.svg` 是 SVG、未知 `/api/*` 返回 JSON 404。
 
-## 升级滑动窗口模式
+## 更新与回滚
 
-先部署支持 v2 的 Worker，再迁移本机；旧 Worker 不提供 `/api/batch`。新 Worker 同时接受 `/api/update` 旧快照，因此可以先安全部署云端。
+更新前阅读 [变更日志](https://github.com/xw7qwq/macflare/blob/main/CHANGELOG.md)，记录当前部署版本，并保留本机私有配置和令牌。在选定的仓库版本上先验证并部署云端，再更新当前用户的 Agent：
 
 ```sh
 npm ci
+npm run check
 npm run deploy
-/bin/bash scripts/install.sh --profile buffered
-```
-
-安装保留已有 endpoint、token、隐私和追加屏蔽名单，替换 Agent 代码并改用常驻调度。`STATUS_TTL_SECONDS` 仅控制 v1 快照，不改变 v2 的窗口策略。启动新会话后首页正常暖机约 7 分钟，已有旧快照或 KV 传播可能影响初次显示。
-
-用 `/api/timeline` 检查 `mode: "window"`、`session_id`、`batch_seq`、`window_end`，等待两个 5 分钟周期确认序号与窗口前进；观察期间切换应用或歌曲，检查这些已观测应用／Music 变化进入同一包并依时间回放；首页普通变化按 2 秒合并展示，精确顺序应核对时间线而非只看每次画面切换。原有 `/api/now`、`/api/music`、应用、设备和徽章在 buffered 下返回延时切片，缺少对应覆盖时为 offline。[时序和恢复](buffering.md)
-
-回退到快照模式前设置对应 Worker TTL（eco 180 秒、realtime 60 秒），再运行 `scripts/install.sh --profile eco` 或 `--profile realtime`。buffered 配置会拒绝 `--once` 和默认单次推送，避免 v1 覆盖窗口；手动预览使用 `--print`，原生采集统计使用 `--observe 30`。
-
-## 升级音乐封面上报
-
-先部署接受可选音乐 URL 的 Worker，再更新本机代码。旧 Worker 严格拒绝未知字段，倒置顺序可能让新 Agent 的上传返回 `400 invalid_payload`；新 Worker 仍接受不含 URL 的旧快照。
-
-```sh
-# 在仓库最新代码上先部署云端。
-npm ci
-npm run deploy
-
-# 再更新当前用户的 Agent 副本，复用已有配置与令牌。
 /bin/bash scripts/install.sh
 ```
 
-保持 Music 播放可提供元数据的歌曲，等待一个后台周期后按需检查 `/api/music`。歌名、歌手存在而 URL 为 `null` 时，可能尚未更新 Agent、本机搜索失败或美国商店没有可信匹配；Worker 本身不会补搜。需要完整状态时使用 `/api/now`，避免每轮并行读取所有分类接口。[封面排查](troubleshooting.md#有歌名但首页没有封面)
+再次安装会复用 endpoint、token、profile、隐私设置和追加屏蔽名单。涉及运行代码的修改还应完成 [贡献指南](https://github.com/xw7qwq/macflare/blob/main/CONTRIBUTING.md) 要求的测试；静态构建成功不能证明后台授权、KV 传播或实际设备采集正常。
+
+Worker 的版本和部署记录可在 Cloudflare 控制台查看。回滚时选择已验证且与当前 Agent 协议兼容的版本，确认绑定与 Secret；如需回滚 Agent，从对应仓库版本重装。回滚代码不会自动恢复本机配置或以前的 KV 数据，也不会撤回已经公开的状态。
+
+### 升级滑动窗口模式
+
+先按上节部署支持 v2 的 Worker，再显式迁移本机：
+
+```sh
+/bin/bash scripts/install.sh --profile buffered
+```
+
+新 Worker 同时接受 v1 快照，旧 Worker 不提供 `/api/batch`，因此必须保持云端先升级的顺序。新安装默认 buffered，已有安装保留原 profile；`STATUS_TTL_SECONDS` 只控制兼容快照，不改变窗口策略。启动后的暖机与连续上传验收见 [缓冲时序](buffering.md#一次窗口如何播放) 和下节。
+
+回退到快照模式前，将 Worker 的 `STATUS_TTL_SECONDS` 设置为对应值并部署：eco 为 180 秒，realtime 为 60 秒。再运行 `scripts/install.sh --profile eco` 或 `--profile realtime`。buffered 配置会拒绝 `--once` 和默认单次推送，手动检查使用 [预览与诊断命令](configuration.md#调度和诊断)。
+
+### 升级音乐封面上报
+
+同样遵循先 Worker、后 Agent 的更新顺序。旧 Worker 严格拒绝未知 URL 字段；新 Worker 兼容不含封面 URL 的旧快照。完成升级后，通过后台周期及 `/api/music` 核验歌曲与封面；URL 为 `null` 也可能表示本机查询失败或美国商店没有可信匹配，见 [封面排查](troubleshooting.md#有歌名但首页没有封面)。
 
 ## 安装与现场验收
 
-先查看待公开的真实采集内容：
-
-```sh
-/bin/bash agent/macflare.sh --print
-```
-
-再安装用户级后台任务：
-
-```sh
-/bin/bash scripts/install.sh --endpoint https://<worker>.<subdomain>.workers.dev
-```
-
-交互输入接收令牌后，按系统弹窗处理 Music 自动化授权。私有配置与最近上传结果位于 `~/Library/Application Support/MacFlare/`；隐私设置见 [配置指南](configuration.md)。
+首次安装步骤见 [快速开始](getting-started.md#_3-检查隐私并安装)。以下清单也用于升级后复核；检查本机 `last-result.json` 的方式见 [配置与诊断](configuration.md#调度和诊断)。
 
 按顺序核验：
 
 1. `GET /api/health` 返回 `{"ok":true,"service":"macflare"}`。这只证明 Worker 路由可以响应，不能证明 KV 或 Mac 正常。
-2. 无 Bearer 的 `POST /api/update` 返回 401，确保未开放匿名写入。
+2. 无 Bearer 的 `POST /api/batch` 和 `POST /api/update` 均返回 401，确保新旧入口都未开放匿名写入。
 3. buffered 检查 `/api/timeline` 与私有 `last-result.json` 的批次结果；快照模式才使用手动 `--once`。核对允许公开的电量、应用及时间。KV 跨位置传播可能延迟，不应每秒密集重试。
 4. 观察至少两个后台上传周期，确认 `updated_at` 和 buffered 的 `batch_seq`、`window_end` 前进；首次暖机之后检查时间线中的变化顺序，并检查首页普通切换的 2 秒合并与隐私／断档立即清除。一次手动成功不能证明 LaunchAgent 有效。
 5. Music 正在播放时，分别验证手动采集与后台周期中的歌名、歌手；升级 Agent 后还可检查成对封面 URL，未匹配时为空不影响其他状态；暂停、退出和拒绝授权分别检查降级语义。后台自动化授权主体可能显示为 **bash**，需用户允许它控制 Music，不能用前台成功代替后台验证。见 [Music 授权排查](troubleshooting.md#music-状态为空或不可用)。
-6. 停止后台任务，等待超过响应中的 `expires_at`（buffered 为窗口末尾加 600 秒，eco 约 180 秒，realtime 60 秒），再直接请求 `/api/now`，应为 offline。GitHub 徽章缓存不用于此验收。
+6. 停止后台任务，等待对应响应的 `expires_at` 后直接重查，应为 offline。buffered 的 `/api/timeline` 保留截止与 `/api/now` 播放覆盖截止不同，核验时分别使用各自返回的值，见 [API 时间语义](api.md#get-api-now)。GitHub 徽章缓存不用于此验收。
 7. 按需重新安装启用后台，并记录实际验证日期、版本和未解决问题。
 
 ```sh
 curl -i https://<worker>.<subdomain>.workers.dev/api/health
+curl -i -X POST https://<worker>.<subdomain>.workers.dev/api/batch
 curl -i -X POST https://<worker>.<subdomain>.workers.dev/api/update
 curl -sS https://<worker>.<subdomain>.workers.dev/api/now
 ```
 
 不要将真实公开快照和令牌作为仓库测试夹具。当前实机验证应以实际部署记录为准，不能仅凭本文步骤判断已完成。
 
-## 本地 Worker 开发
+## 本地验证
 
-```sh
-npm ci
-cp .dev.vars.example .dev.vars
-# 编辑 .dev.vars 中的 INGEST_TOKEN。
-npm run dev
-```
-
-默认本地入口由 Wrangler 输出，通常为 `http://localhost:8787`。本地模拟 KV 与线上资源分离。`.dev.vars` 已被 Git 忽略；不要提交它。线上配置必须使用 HTTPS，本地 HTTP 仅用于回环地址测试。
-
-```sh
-npm test
-npm run check
-```
-
-Worker 单元测试覆盖协议与异常分支，`check` 包含文档构建、静态链接检查、语法及打包预检查。它们不验证账户权限、远端 KV 传播或 macOS 系统授权。
-
-## 更新与回滚
-
-更新前阅读版本和协议变更，保留本机私有配置、令牌及当前已部署版本信息。获取代码后运行 `npm ci`、测试和 `npm run deploy`。本机 Agent 通过再次执行安装脚本更新；检查隐私配置后核验后台调度。
-
-Worker 的版本和部署记录可在 Cloudflare 控制台查看；回滚选择已验证的版本，并确认绑定和 Secret 与代码相容。回滚代码不会自动还原本机配置或之前的 KV 数据。不要将未验证的旧 Secret 再次投入使用。
+文档预览、模拟 Worker/KV、`.dev.vars` 与检查命令统一见 [文档开发与发布](documentation.md)。本地检查不验证账户权限、远端 KV 传播或 macOS 系统授权，正式更新仍需上节的现场验收。
 
 ## 停止与删除
 
